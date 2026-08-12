@@ -62,6 +62,20 @@ conformance:
 itf-golden:
     bash scripts/gen-candidates.sh
 
-# Full check pipeline (what CI runs), Stages 1-8.
+# Chuggy-model PR 1 (docs/chuggy-charter.md; specs/chuggy/): typecheck +
+# unit tests + invariant simulation on all three instances (both GatePricing
+# branches + RetryFree) — check.sh Stage 9 minus its expected-violation
+# witness, which needs bash logic (run `just check` for the full gate).
+chuggy:
+    npx quint typecheck specs/chuggy/measure.qnt
+    npx quint typecheck specs/chuggy/domain.qnt
+    npx quint typecheck specs/chuggy/mc/mc_chuggy.qnt
+    npx quint typecheck specs/chuggy/tests/chuggy_test.qnt
+    npx quint test specs/chuggy/tests/chuggy_test.qnt
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40
+
+# Full check pipeline (what CI runs), Stages 1-9.
 check:
     bash scripts/check.sh

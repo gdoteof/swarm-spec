@@ -249,4 +249,53 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
+echo "=== Stage 9: chuggy-model PR 1 (typecheck + unit tests + invariant simulation) ==="
+# The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
+# PR 1's gate is typecheck + unit tests + randomized invariant simulation on
+# BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
+# exercised under both prices) plus the RetryFree instance (the operator-
+# churn exemption in stepDescends must be exercised by a machine run).
+# Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
+# specs/; the explicit typechecks here keep the stage self-contained.
+# Apalache verification is deliberately deferred (see specs/chuggy/README.md).
+for f in specs/chuggy/measure.qnt specs/chuggy/domain.qnt \
+         specs/chuggy/mc/mc_chuggy.qnt specs/chuggy/tests/chuggy_test.qnt; do
+  echo "--- typecheck $f"
+  npx quint typecheck "$f"
+done
+npx quint test specs/chuggy/tests/chuggy_test.qnt
+npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
+  --invariant=allInvariants --max-samples=2000 --max-steps=40
+npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only \
+  --invariant=allInvariants --max-samples=2000 --max-steps=40
+npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
+  --invariant=allInvariants --max-samples=2000 --max-steps=40
+
+# 9b — anti-vacuity, expected-fail (the Stage 6a pattern: pinned seed, rust
+# backend, grep the verdict — never trust exit codes alone). On the
+# RetryFree instance the witness freeClimbNever ("no operator-retry ever
+# climbs the measure") MUST be violated: a free resume into
+# Evaluating/Landing climbs the measure and is exactly the CHURN arm that
+# stepDescends exempts. If this run ever passes, that exemption has become
+# dead code (or free retries silently started charging) — fail loudly.
+if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
+  --invariant=freeClimbNever \
+  --max-samples=20000 --max-steps=40 --seed=0x620f5df53d5beb42 --backend=rust 2>&1); then
+  echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
+  echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
+  exit 1
+fi
+echo "$free_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_chuggy_retryfree witness run failed for a reason other than the expected violation:" >&2
+  echo "$free_out" | tail -5 >&2
+  exit 1
+}
+echo "$free_out" | grep -q 'operator-retry' || {
+  echo "FAIL: freeClimbNever violation trace lacks the operator-retry signature" >&2
+  exit 1
+}
+echo "Free-retry climb reproduced: an uncharged operator resume climbs the measure"
+echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt CHURN set)."
+
+echo
 echo "=== All checks passed ==="

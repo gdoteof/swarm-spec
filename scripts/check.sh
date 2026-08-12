@@ -54,8 +54,36 @@ echo "=== Stage 5: Apalache bounded model checking (mc_small) ==="
 # solver time explodes with depth on this instance (measured, warm
 # Apalache: 3 -> 18s, 4 -> 47s, 5 -> 5m16s, 6 -> >10min); Stage 4's random
 # simulation covers depth 40. The first run downloads Apalache to ~/.quint.
-JVM_ARGS=-Xmx4G npx quint verify specs/chuggernaut/mc/mc_small.qnt \
-  --main=mc_small --invariant=allInvariants --max-steps=4
+# quint verify exits 0 even when the Apalache JVM dies mid-check (observed:
+# native Z3 SIGSEGV during Step 1 transition exploration left no verdict at
+# all, exit code 0 — the same false-success behavior Stage 6 already guards
+# against for --temporal). So the exit code is not trusted: the stage passes
+# only on an explicit "[ok] No violation found" verdict. The SIGSEGV is
+# intermittent (a libz3 instability, not model-dependent), so the stage
+# retries up to 3 attempts; a genuine invariant violation ("[violation]")
+# fails immediately without retry.
+verify_ok=""
+for attempt in 1 2 3; do
+  verify_out=$(JVM_ARGS=-Xmx4G npx quint verify specs/chuggernaut/mc/mc_small.qnt \
+    --main=mc_small --invariant=allInvariants --max-steps=4 2>&1) || true
+  if echo "$verify_out" | grep -q '\[ok\] No violation found'; then
+    echo "$verify_out" | grep '\[ok\] No violation found'
+    verify_ok=yes
+    break
+  fi
+  if echo "$verify_out" | grep -q '\[violation\]'; then
+    echo "$verify_out" | tail -30 >&2
+    echo "FAIL: quint verify found an invariant violation" >&2
+    exit 1
+  fi
+  echo "Stage 5 attempt $attempt: no verdict (JVM/Z3 crash?) — retrying" >&2
+done
+if [ -z "$verify_ok" ]; then
+  echo "$verify_out" | tail -20 >&2
+  echo "FAIL: quint verify produced no explicit success verdict in 3 attempts" >&2
+  exit 1
+fi
+rm -f hs_err_pid*.log core.* 2>/dev/null || true
 
 echo
 echo "=== Stage 6: liveness (quiescent termination + documented-livelock reproduction) ==="

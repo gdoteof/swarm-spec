@@ -2,3 +2,7 @@ node_modules/
 _apalache-out/
 traces/*.itf.json
 .quint/
+
+# JVM crash artifacts (intermittent native Z3 SIGSEGV during Apalache runs)
+hs_err_pid*.log
+core.*

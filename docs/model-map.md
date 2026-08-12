@@ -2,6 +2,8 @@
 
 As of **2026-08-12, main @ `3365084`**.
 
+For the system explained behavior-first, see [chuggernaut.md](chuggernaut.md).
+
 This is the code-level companion to
 [model-status.md](model-status.md): where that document draws the
 abstraction boundary, the lifecycle, and the epistemic status of each claim,

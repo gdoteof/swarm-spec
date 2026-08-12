@@ -34,6 +34,13 @@ verify:
 verify-liveness:
     JVM_ARGS=-Xmx4G npx quint verify specs/chuggernaut/mc/mc_liveness.qnt --main=mc_liveness --invariant=quiescentDescent --max-steps=6
 
+# Emit a sample ITF trace to traces/sample.itf.json (gitignored). Each ITF
+# state snapshots every var, including lastStep {label, transitions,
+# effects} — the input to the ITF->golden-YAML projection described in
+# docs/trace-conformance.md §3.
+itf:
+    npx quint run specs/chuggernaut/mc/mc_small.qnt --main=mc_small --max-samples=1 --max-steps=25 --out-itf=traces/sample.itf.json
+
 # Full check pipeline (what CI runs).
 check:
     bash scripts/check.sh

@@ -15,4 +15,9 @@ echo "=== Stage 2: unit tests ==="
 npx quint test specs/chuggernaut/tests/table_test.qnt
 
 echo
+echo "=== Stage 3: simulation smoke (mc_small) ==="
+npx quint run specs/chuggernaut/mc/mc_small.qnt --main=mc_small \
+  --max-samples=500 --max-steps=40
+
+echo
 echo "=== All checks passed ==="

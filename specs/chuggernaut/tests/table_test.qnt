@@ -104,4 +104,35 @@ module table_test {
   run allowedImpliesNonTerminalSourceTest =
     assert(allStates.forall(from =>
       allStates.forall(t => allowedTransition(from, t) implies not(isTerminal(from)))))
+
+  /// The FULL legal relation, exhaustively. `legalEdges` above is the Rust
+  /// `table_edges` sample (32 edges); the function actually admits 40 —
+  /// docs/model-map.md §3 surfaced that three decider-emitted edges
+  /// (Work→Work, Work→Escalated, Evaluation→Escalated) and the
+  /// Evaluation→Evaluation self-loop had no per-edge assertion. This set is
+  /// the complete expansion of every clause of state.rs:22-45; the iff over
+  /// all 144 ordered pairs makes any table drift — an edge added OR removed —
+  /// a test failure, not just the sampled ones.
+  pure val fullLegalSet: Set[(JobState, JobState)] = Set(
+    (Draft, Ready), (Draft, Blocked), (Draft, Frozen), (Draft, Revoked),
+    (Frozen, Draft), (Frozen, Ready), (Frozen, Blocked), (Frozen, Batched),
+    (Frozen, Revoked),
+    (Batched, Frozen), (Batched, Done), (Batched, Revoked),
+    (Blocked, Ready), (Blocked, Stalled), (Blocked, Revoked),
+    (Ready, Work), (Ready, Stalled), (Ready, Revoked),
+    (Work, Work), (Work, Evaluation), (Work, Escalated), (Work, Revoked),
+    (Evaluation, Evaluation), (Evaluation, Work), (Evaluation, WrapUp),
+    (Evaluation, Done), (Evaluation, Escalated), (Evaluation, Revoked),
+    (WrapUp, WrapUp), (WrapUp, Work), (WrapUp, Done), (WrapUp, Escalated),
+    (WrapUp, Revoked),
+    (Escalated, Work), (Escalated, Evaluation), (Escalated, WrapUp),
+    (Escalated, Revoked),
+    (Stalled, Ready), (Stalled, Stalled), (Stalled, Revoked)
+  )
+
+  run fullLegalSetIsExactTest = assert(and {
+    fullLegalSet.size() == 40,
+    allStates.forall(from => allStates.forall(t =>
+      allowedTransition(from, t) iff fullLegalSet.contains((from, t))))
+  })
 }

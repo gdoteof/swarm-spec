@@ -1,0 +1,107 @@
+# CANDIDATE golden trace — GENERATED from the swarm-spec Quint model by
+#   python3 scripts/itf-to-golden.py <trace.itf.json> --out <this file>
+# NOT a recorded chuggernaut trace: model output projected into the golden
+# YAML schema (swarm-spec docs/trace-conformance.md §3) for a
+# golden_traces.rs-style harness to execute.
+# Source: specs/chuggernaut/mc/mc_small.qnt (15 ITF states -> 13 steps; skipped init x1, quiesce x1 — model bookkeeping, no observable decision).
+# Scenario: clean lifecycle — all 3 jobs land (Ready->Work->Evaluation->WrapUp->Done),
+# including job 2 unblocking (Blocked->Ready) after its dep lands. mc_small instance:
+# WORK_RETRIES=1, REWORK_BUDGET=1, DEADLINE=3, 2 agents.
+# Regenerate: bash scripts/gen-candidates.sh  (seed 0x37a1792d8159488, expected-fail of
+# not(witnessAllDone and witnessBlockedUnblocks) on mc_small, depth 14, rust backend).
+# Scenario init (ITF state 0) — the job graph the harness must set up:
+#   job 1: Ready, deps: none, deadline gas 3
+#   job 2: Blocked, deps: 1, deadline gas 3
+#   job 3: Ready, deps: none, deadline gas 3
+#   initial ready queue: [1, 3]
+# Events are model decision labels prefixed "model:" (machine provenance;
+# golden fixtures carry author prose there). Effects are spelled in the
+# golden vocabulary through the v1 allowlist (swarm-spec
+# scripts/conformance_vocab.py); effects outside it are omitted, so a
+# recorded implementation trace must be compared through the same
+# allowlist projection.
+steps:
+- event: model:dispatch
+  transitions:
+  - job: 1
+    from: Ready
+    to: Work
+  effects: []
+- event: model:dispatch
+  transitions:
+  - job: 3
+    from: Ready
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 3
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 3
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 1
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 1
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:job-done
+  transitions:
+  - job: 3
+    from: WrapUp
+    to: Done
+  effects:
+  - SquashMerge
+  - DeleteBranch job/3
+- event: model:job-done
+  transitions:
+  - job: 1
+    from: WrapUp
+    to: Done
+  effects:
+  - SquashMerge
+  - DeleteBranch job/1
+- event: model:job-unblocked
+  transitions:
+  - job: 2
+    from: Blocked
+    to: Ready
+  effects: []
+- event: model:dispatch
+  transitions:
+  - job: 2
+    from: Ready
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 2
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 2
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:job-done
+  transitions:
+  - job: 2
+    from: WrapUp
+    to: Done
+  effects:
+  - SquashMerge
+  - DeleteBranch job/2

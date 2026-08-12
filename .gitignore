@@ -1,8 +1,10 @@
 node_modules/
 _apalache-out/
 traces/*.itf.json
+traces/candidates/
 .quint/
 
 # JVM crash artifacts (intermittent native Z3 SIGSEGV during Apalache runs)
 hs_err_pid*.log
 core.*
+__pycache__/

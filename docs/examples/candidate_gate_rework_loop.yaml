@@ -1,0 +1,98 @@
+# CANDIDATE golden trace — GENERATED from the swarm-spec Quint model by
+#   python3 scripts/itf-to-golden.py <trace.itf.json> --out <this file>
+# NOT a recorded chuggernaut trace: model output projected into the golden
+# YAML schema (swarm-spec docs/trace-conformance.md §3) for a
+# golden_traces.rs-style harness to execute.
+# Source: specs/chuggernaut/mc/mc_livelock.qnt (13 ITF states -> 12 steps; skipped init x1 — model bookkeeping, no observable decision).
+# Scenario: the budget-free merge-gate rework loop (chuggernaut docs/spec.md par. 3.3
+# "Bounding", line ~1265): job 1 cycles Work->Evaluation->WrapUp->Work on
+# merge_gate_failure THREE times — more than WORK_RETRIES + REWORK_BUDGET = 2 combined —
+# with rework_budget untouched (evalReworks stays 1). mc_livelock instance: DEADLINE=1000
+# models a graph with no job_deadline set, so nothing bounds the loop. No hand-written
+# golden fixture covers this path.
+# Regenerate: bash scripts/gen-candidates.sh  (seed 0xa5110d572bfbd1d5, expected-fail of
+# gateReworksWithinBudgets on mc_livelock, depth 40, rust backend — the same pinned run
+# as swarm-spec check.sh Stage 6a).
+# Scenario init (ITF state 0) — the job graph the harness must set up:
+#   job 1: Ready, deps: none, deadline gas 1000
+#   job 2: Ready, deps: none, deadline gas 1000
+#   initial ready queue: [1, 2]
+# Events are model decision labels prefixed "model:" (machine provenance;
+# golden fixtures carry author prose there). Effects are spelled in the
+# golden vocabulary through the v1 allowlist (swarm-spec
+# scripts/conformance_vocab.py); effects outside it are omitted, so a
+# recorded implementation trace must be compared through the same
+# allowlist projection.
+steps:
+- event: model:dispatch
+  transitions:
+  - job: 1
+    from: Ready
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 1
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:job-rework-started eval_failure
+  transitions:
+  - job: 1
+    from: Evaluation
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 1
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 1
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:job-rework-started merge_gate_failure
+  transitions:
+  - job: 1
+    from: WrapUp
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 1
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 1
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:job-rework-started merge_gate_failure
+  transitions:
+  - job: 1
+    from: WrapUp
+    to: Work
+  effects: []
+- event: model:work-succeeded
+  transitions:
+  - job: 1
+    from: Work
+    to: Evaluation
+  effects: []
+- event: model:eval-passed
+  transitions:
+  - job: 1
+    from: Evaluation
+    to: WrapUp
+  effects: []
+- event: model:job-rework-started merge_gate_failure
+  transitions:
+  - job: 1
+    from: WrapUp
+    to: Work
+  effects: []

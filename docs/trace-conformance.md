@@ -1,10 +1,14 @@
 # Trace conformance: model ↔ golden traces (design)
 
-Status: **design + plumbing only** (PR5). This document specifies the
+Status: **replay direction IMPLEMENTED** (PR8); the generation direction
+remains design + ITF plumbing only (`just itf`). This document specifies the
 conformance harness between the Quint model and chuggernaut's golden decision
-traces. Nothing here is implemented yet except the ITF emission plumbing
-(`just itf`); the replay generator and the ITF→YAML converter are the
-follow-on work.
+traces. The replay generator is `scripts/gen-conformance.py`; its output is
+committed under `specs/chuggernaut/tests/conformance/`; `scripts/check.sh`
+Stage 7 runs it, with a drift guard against a chuggernaut checkout when one
+is available (`just conformance-gen` regenerates). §2.4 records exactly where
+the implementation diverged from this design. The ITF→YAML converter (§3) is
+still follow-on work.
 
 References (paths relative to the chuggernaut repo root):
 
@@ -84,9 +88,11 @@ from alignment but still checked against every model invariant
 
 ## 2. Replay direction (golden → model) — first to build
 
-A generator (`scripts/gen_replay.py`, follow-on PR) reads each golden YAML
-and emits one Quint module per scenario into `specs/chuggernaut/replay/`,
-each containing:
+The generator (`scripts/gen-conformance.py`) reads each golden YAML from a
+chuggernaut checkout at runtime and emits one Quint module per scenario into
+`specs/chuggernaut/tests/conformance/` (`conformance_<fixture>_test.qnt`,
+plus the shared allowlist module `conformance_allowlist.qnt`), each
+containing:
 
 - **Instance constants from the scenario's job type.** The fixtures pin
   budgets in their job-type YAML (`impl-cmd` has no `rework_budget`;
@@ -109,8 +115,11 @@ each containing:
   - `modeled(lastStep.effects)` equals the allowlist-projection of the
     golden step's effects for that segment (§4).
 
-`quint test` over the generated modules is the conformance run; it slots
-into `scripts/check.sh` as a new stage when the generator lands.
+`quint test` over the generated modules is the conformance run —
+`scripts/check.sh` Stage 7, which needs no chuggernaut checkout (the modules
+are committed) and, when a checkout *is* present (env `CHUGGERNAUT_DIR` or
+the dev default), also regenerates into a temp dir and fails on any diff
+against the committed files (drift guard).
 
 ### 2.1 Golden signal → decide mapping (as of today's decide.qnt)
 
@@ -231,6 +240,58 @@ build the final `.expect`): drop the ten `PublishEvent …` entries, normalize
 Note what the two `.expect` sides check: transitions **exactly**, effects
 **through the allowlist** — the asymmetry §4 defines.
 
+### 2.4 Implementation deltas (PR8 — what shipped vs this design)
+
+The generator landed as designed — init absorption, decision-marker
+segmentation, driver steps, the §2.1 mapping table verbatim — with these
+deltas:
+
+1. **Names/paths.** `scripts/gen-conformance.py` (not `gen_replay.py`);
+   output committed under `specs/chuggernaut/tests/conformance/` as
+   `conformance_<fixture>_test.qnt`; the model-side allowlist is the shared
+   generated module `conformance_allowlist.qnt`, and both halves of the §4
+   projection are maintained in the generator — its single home. Licensing:
+   chuggernaut has no license file, so nothing from its tree is vendored;
+   the generator reads the YAMLs at runtime and every generated file carries
+   a provenance header (upstream URL + commit, source fixture, regeneration
+   command).
+2. **Effects are asserted after every aligned step**, not only at terminal
+   steps as the §2.3 worked example sketched: the generator segments the
+   golden effect stream at the decision markers and bakes each segment's
+   allowlist projection into that step's `.expect`. Each `.expect` also pins
+   `lastStep.label` (the §2.1 model label — an eval rework can never satisfy
+   a gate-rework step) and `allInvariants`; driver steps assert
+   `allInvariants` alone, and each run ends by asserting every job's final
+   scenario state.
+3. **`AdvanceDefault` is promotion, not filtered machinery** — a real
+   vocabulary finding from replay. `gate_entry_and_promote`'s clean landing
+   promotes the squash candidate by fast-forwarding the default branch: its
+   golden effects carry `AdvanceDefault` and **no** `SquashMerge`, while the
+   model's `LClean` emits `SquashMerge` unconditionally. Under this design's
+   original allowlist (AdvanceDefault filtered as v3 machinery) that fixture
+   fails effect comparison — model `[SquashMerge, DeleteBranch]` vs golden
+   `[DeleteBranch]`. v1 cannot see whether a gate is present, so canonical
+   `SquashMerge` now reads "the job's work was promoted into the default
+   branch", golden side `SquashMerge` *or* `AdvanceDefault` (§4 table
+   updated). v3, which models the gate, must split the two mechanisms again.
+4. **The faithfulness boundary is hard-coded as generator errors.** An
+   unmapped transition pair, an unknown `PublishEvent job-*` label, an
+   unclassified effect string, marker/decision misalignment, or a decision
+   the generator's mini-simulation says is not enabled (wrong ready-queue
+   head, wrong budget arm) each abort generation — nothing is silently
+   dropped or bent to pass. A new upstream fixture must be classified in the
+   generator's audit tables before anything generates.
+5. **`staged_eval_short_circuit` ships as a PARTIAL module** (marked in its
+   header): its v1 transition skeleton + v1-grain effects replay green, per
+   the §2.2 audit; `gate_fix_fast_path` (v3) and `revoke_cascade` (v4) are
+   not generated — the generator prints them as skipped with the gating
+   version.
+
+Replay results at upstream `72dfa61`: all 9 generated modules pass
+`quint test` — 36 aligned decisions (transitions + labels asserted exactly),
+8 driver steps (invariant-checked), 13 modeled-effect comparisons. No
+transition-level divergence; the one effect-level finding is delta 3.
+
 ## 3. Generation direction (model → golden candidates) — later
 
 The reverse arrow: let the simulator explore, then hand its traces to
@@ -334,16 +395,15 @@ vocabulary `V` (grows monotonically with v2/v3/v4):
 
   | canonical             | model side                                              | golden side                        |
   | --------------------- | ------------------------------------------------------- | ---------------------------------- |
-  | `SquashMerge`         | `SquashMerge`                                           | `SquashMerge`                      |
+  | `SquashMerge` ("work promoted to default") | `SquashMerge`                      | `SquashMerge`; `AdvanceDefault` (gated promote — §2.4 delta 3) |
   | `DeleteBranch`        | `DeleteBranch`                                          | `DeleteBranch job/<n>` (job branch only) |
   | `HumanEscalationTask` | `CreateEscalationTask` (→Escalated), `CreateHumanTask` (→Stalled) | `PutTask Human(escalation)` |
 
   Everything else is projected away before comparison:
   - golden-only, outside the v1 abstraction: all `PublishEvent …`
     (segmentation signals, not compared), `CreateSquashCandidate`,
-    `LaunchGateStage`, `LaunchGateFix`, `AdvanceDefault`,
-    `DeleteBranch merge-gate/<n>`, `RebaseOntoWithConflict`, `EnterWork`
-    (v3 gate/queue machinery);
+    `LaunchGateStage`, `LaunchGateFix`, `DeleteBranch merge-gate/<n>`,
+    `RebaseOntoWithConflict`, `EnterWork` (v3 gate/queue machinery);
   - model-only, below or beside the goldens' grain: `CreateWorkTask`,
     `LaunchContainer` (the impl logs these only as `PublishEvent
     task-created` / `task-launched`), `FanOutEvaluators` (v2 grain),

@@ -1,0 +1,376 @@
+{
+    "answers": [
+        {
+            "question_id": "domain/firstclass",
+            "respondent": "geoff",
+            "value": "[\"authoring\",\"merge-queue\",\"multi-repo\",\"task-records\"]",
+            "updated_at": "2026-08-12 20:14:45"
+        },
+        {
+            "question_id": "domain/firstclass",
+            "respondent": "kasofsk",
+            "value": "[\"authoring\",\"merge-queue\",\"multi-repo\",\"task-records\"]",
+            "updated_at": "2026-08-12 19:38:35"
+        },
+        {
+            "question_id": "domain/firstclass-r2",
+            "respondent": "kasofsk",
+            "value": "authoring, task-records, mutli-repo, merge-queue",
+            "updated_at": "2026-08-12 22:04:55"
+        },
+        {
+            "question_id": "domain/new",
+            "respondent": "geoff",
+            "value": "v-next should not spend significant code energy re-implementing what can be had for free",
+            "updated_at": "2026-08-12 19:18:02"
+        },
+        {
+            "question_id": "domain/new",
+            "respondent": "kasofsk",
+            "value": "v-next should be far leaner, cleaner, and doc oriented. less features would be better",
+            "updated_at": "2026-08-12 19:39:53"
+        },
+        {
+            "question_id": "economy/currency",
+            "respondent": "geoff",
+            "value": "observed-only",
+            "updated_at": "2026-08-12 20:55:18"
+        },
+        {
+            "question_id": "economy/currency",
+            "respondent": "kasofsk",
+            "value": "observed-only",
+            "updated_at": "2026-08-12 22:05:32"
+        },
+        {
+            "question_id": "economy/deadline",
+            "respondent": "geoff",
+            "value": "required",
+            "updated_at": "2026-08-12 18:58:50"
+        },
+        {
+            "question_id": "economy/deadline",
+            "respondent": "kasofsk",
+            "value": "required",
+            "updated_at": "2026-08-12 19:48:39"
+        },
+        {
+            "question_id": "economy/gate-pricing",
+            "respondent": "geoff",
+            "value": "keep-asymmetry",
+            "updated_at": "2026-08-12 19:14:11"
+        },
+        {
+            "question_id": "economy/gate-pricing",
+            "respondent": "kasofsk",
+            "value": "budget-gate",
+            "updated_at": "2026-08-12 19:40:30"
+        },
+        {
+            "question_id": "economy/gate-pricing-r2",
+            "respondent": "geoff",
+            "value": "parameterize-and-decide",
+            "updated_at": "2026-08-12 20:56:51"
+        },
+        {
+            "question_id": "economy/op-retry",
+            "respondent": "geoff",
+            "value": "configurable",
+            "updated_at": "2026-08-12 18:58:20"
+        },
+        {
+            "question_id": "economy/op-retry",
+            "respondent": "kasofsk",
+            "value": "configurable",
+            "updated_at": "2026-08-12 19:48:20"
+        },
+        {
+            "question_id": "eval/evaluator-failure",
+            "respondent": "geoff",
+            "value": "job-pays",
+            "updated_at": "2026-08-12 20:54:11"
+        },
+        {
+            "question_id": "eval/evaluator-failure",
+            "respondent": "kasofsk",
+            "value": "job-pays",
+            "updated_at": "2026-08-12 22:06:05"
+        },
+        {
+            "question_id": "eval/stages",
+            "respondent": "kasofsk",
+            "value": "evals are specified per job type / job so depends, no single set of stages exists",
+            "updated_at": "2026-08-12 19:50:59"
+        },
+        {
+            "question_id": "eval/verdict",
+            "respondent": "geoff",
+            "value": "i think we would want unanimous passing as a default for a job to pass evaluation.  some of the evaluators are themselves agents, particularly eg adversarial review agents",
+            "updated_at": "2026-08-12 19:19:47"
+        },
+        {
+            "question_id": "fabric/env",
+            "respondent": "geoff",
+            "value": "this will originally be tested in small hodge podge k3s esque own metal clusters.  probably a real hodgepodge of x86, linux arm machine and mac minis (will want osx native workers as part of some evaluators) -- it will ultimately be run in the cloud and probably managed",
+            "updated_at": "2026-08-12 20:17:01"
+        },
+        {
+            "question_id": "fabric/env",
+            "respondent": "kasofsk",
+            "value": "random pile of boxes",
+            "updated_at": "2026-08-12 19:37:54"
+        },
+        {
+            "question_id": "fabric/exclusivity",
+            "respondent": "geoff",
+            "value": "correctness",
+            "updated_at": "2026-08-12 19:07:46"
+        },
+        {
+            "question_id": "fabric/exclusivity",
+            "respondent": "kasofsk",
+            "value": "correctness",
+            "updated_at": "2026-08-12 19:37:08"
+        },
+        {
+            "question_id": "fabric/exclusivity-notes",
+            "respondent": "geoff",
+            "value": "i think this is here for correctness but is maybe not always true; it seems plausible to me we would want to run out more than one implementor at a time and after review pick the best",
+            "updated_at": "2026-08-12 19:09:00"
+        },
+        {
+            "question_id": "fabric/exclusivity-notes",
+            "respondent": "kasofsk",
+            "value": "jobs have tasks, during the work phase multiple tasks may run in parallel, reviewers may also run in parallel. no tournament - a work or eval may take multiple discrete tasks, which may be performed in parallel",
+            "updated_at": "2026-08-12 21:55:51"
+        },
+        {
+            "question_id": "fabric/exclusivity-r2",
+            "respondent": "kasofsk",
+            "value": "effect-only",
+            "updated_at": "2026-08-12 22:00:03"
+        },
+        {
+            "question_id": "fabric/macos-notes",
+            "respondent": "geoff",
+            "value": "i think that we can kinda make a mac mini a worker node with modern tooling using a hypervisor and something like https://github.com/agoda-com/macOS-vz-kubelet.  both doing and evaluating mobile work is probably a priority",
+            "updated_at": "2026-08-12 20:45:00"
+        },
+        {
+            "question_id": "fabric/shape",
+            "respondent": "geoff",
+            "value": "undecided",
+            "updated_at": "2026-08-12 21:52:20"
+        },
+        {
+            "question_id": "fabric/shape",
+            "respondent": "kasofsk",
+            "value": "service-plus-jobs",
+            "updated_at": "2026-08-12 21:47:36"
+        },
+        {
+            "question_id": "fabric/shape-notes",
+            "respondent": "geoff",
+            "value": "i think this might deserve its own custom context gathering interface",
+            "updated_at": "2026-08-12 18:52:35"
+        },
+        {
+            "question_id": "fabric/shape-notes",
+            "respondent": "kasofsk",
+            "value": "need examples of flows in each",
+            "updated_at": "2026-08-12 19:33:55"
+        },
+        {
+            "question_id": "fabric/shape-r2",
+            "respondent": "geoff",
+            "value": "crd-controllers",
+            "updated_at": "2026-08-12 20:37:17"
+        },
+        {
+            "question_id": "fabric/trust",
+            "respondent": "geoff",
+            "value": "[\"active-deadline\",\"backoff\",\"no-double-pods\",\"quota\",\"watch-delivery\"]",
+            "updated_at": "2026-08-12 18:54:01"
+        },
+        {
+            "question_id": "fabric/trust",
+            "respondent": "kasofsk",
+            "value": "[\"active-deadline\",\"backoff\",\"no-double-pods\",\"quota\",\"watch-delivery\"]",
+            "updated_at": "2026-08-12 19:37:33"
+        },
+        {
+            "question_id": "fabric/trust-r2",
+            "respondent": "geoff",
+            "value": "drop-and-design-idempotent",
+            "updated_at": "2026-08-12 20:39:07"
+        },
+        {
+            "question_id": "humans/invariant",
+            "respondent": "geoff",
+            "value": "adopt",
+            "updated_at": "2026-08-12 19:02:12"
+        },
+        {
+            "question_id": "humans/invariant",
+            "respondent": "kasofsk",
+            "value": "adopt",
+            "updated_at": "2026-08-12 19:58:51"
+        },
+        {
+            "question_id": "humans/invariant-notes",
+            "respondent": "geoff",
+            "value": "i think yes--with the caveat that 'progressing' could be just be updating in a priority queue without any work actually moving forward",
+            "updated_at": "2026-08-12 19:04:41"
+        },
+        {
+            "question_id": "humans/progressing",
+            "respondent": "geoff",
+            "value": "measure-descent",
+            "updated_at": "2026-08-12 20:53:47"
+        },
+        {
+            "question_id": "humans/progressing",
+            "respondent": "kasofsk",
+            "value": "report-only",
+            "updated_at": "2026-08-12 22:06:45"
+        },
+        {
+            "question_id": "humans/surface",
+            "respondent": "geoff",
+            "value": "i think the idea is that we will be building an interface that will show those things have have possible integrations to github slack etc, but would primarily be a dashboard; maybe that dashboard will rely heavily on k8s native values",
+            "updated_at": "2026-08-12 19:02:12"
+        },
+        {
+            "question_id": "humans/surface",
+            "respondent": "kasofsk",
+            "value": "they surface within the platform",
+            "updated_at": "2026-08-12 19:58:31"
+        },
+        {
+            "question_id": "identity/anything",
+            "respondent": "geoff",
+            "value": "not sure if it matters here/yet, but i think the nextr chuggernaut should be very good at measuring and surfacing context/api costs as first class concepts to be handled",
+            "updated_at": "2026-08-12 20:18:23"
+        },
+        {
+            "question_id": "identity/name",
+            "respondent": "geoff",
+            "value": "i think v-next is just the model not the next implementation of chuggernaut.   chugge-ideal or something",
+            "updated_at": "2026-08-12 19:20:58"
+        },
+        {
+            "question_id": "identity/name",
+            "respondent": "kasofsk",
+            "value": "chuggy",
+            "updated_at": "2026-08-12 20:11:00"
+        },
+        {
+            "question_id": "identity/name-r2",
+            "respondent": "geoff",
+            "value": "i think chugge.com or some other domain was available which is why i liked chugge over chuggy.  i dont care and think its likely kasosfk and i are both bad at coming up with names.  maybe its just:  chuggy-model, chuggy",
+            "updated_at": "2026-08-12 20:52:16"
+        },
+        {
+            "question_id": "identity/nongoals-r2",
+            "respondent": "geoff",
+            "value": "[\"no-dashboard-in-model\",\"no-own-retry\",\"no-own-scheduler\"]",
+            "updated_at": "2026-08-12 20:53:00"
+        },
+        {
+            "question_id": "identity/nongoals-r2",
+            "respondent": "kasofsk",
+            "value": "[\"no-dashboard-in-model\",\"no-own-retry\",\"no-own-scheduler\"]",
+            "updated_at": "2026-08-12 22:09:25"
+        },
+        {
+            "question_id": "identity/repo",
+            "respondent": "geoff",
+            "value": "swarm-spec-subdir",
+            "updated_at": "2026-08-12 19:20:58"
+        },
+        {
+            "question_id": "identity/repo",
+            "respondent": "kasofsk",
+            "value": "impl-repo",
+            "updated_at": "2026-08-12 20:11:27"
+        },
+        {
+            "question_id": "identity/repo-notes",
+            "respondent": "geoff",
+            "value": "not opposed to a fresh repo, dont like it in the deployment repo.  seems simplest in this repo that already has tooling",
+            "updated_at": "2026-08-12 19:21:26"
+        },
+        {
+            "question_id": "identity/repo-notes",
+            "respondent": "kasofsk",
+            "value": "monorepo",
+            "updated_at": "2026-08-12 20:11:31"
+        },
+        {
+            "question_id": "identity/repo-r2",
+            "respondent": "geoff",
+            "value": "fresh-monorepo",
+            "updated_at": "2026-08-12 20:52:16"
+        },
+        {
+            "question_id": "identity/scale",
+            "respondent": "geoff",
+            "value": "this rewrite we want to do (which in turn makes us want to quint the abstract problem) is about expanding the system.  as of now its doing dozens of jobs (probably hundreds of tasks) per day.  capped largely due to token budget but also not in a good spot for Some Company to try it out",
+            "updated_at": "2026-08-12 19:23:13"
+        },
+        {
+            "question_id": "landing/divergence",
+            "respondent": "kasofsk",
+            "value": "wrapup phase needs thought",
+            "updated_at": "2026-08-12 19:49:47"
+        },
+        {
+            "question_id": "landing/semantics",
+            "respondent": "geoff",
+            "value": "undecided",
+            "updated_at": "2026-08-12 18:59:13"
+        },
+        {
+            "question_id": "landing/semantics",
+            "respondent": "kasofsk",
+            "value": "undecided",
+            "updated_at": "2026-08-12 19:48:54"
+        },
+        {
+            "question_id": "premise/agree",
+            "respondent": "geoff",
+            "value": "yes",
+            "updated_at": "2026-08-12 19:06:41"
+        },
+        {
+            "question_id": "premise/agree",
+            "respondent": "kasofsk",
+            "value": "no",
+            "updated_at": "2026-08-12 21:30:36"
+        },
+        {
+            "question_id": "premise/agree-notes",
+            "respondent": "kasofsk",
+            "value": "no",
+            "updated_at": "2026-08-12 21:37:15"
+        },
+        {
+            "question_id": "termination/scope",
+            "respondent": "geoff",
+            "value": "both",
+            "updated_at": "2026-08-12 19:04:41"
+        },
+        {
+            "question_id": "termination/scope",
+            "respondent": "kasofsk",
+            "value": "per-job",
+            "updated_at": "2026-08-12 20:10:36"
+        },
+        {
+            "question_id": "termination/scope-r2",
+            "respondent": "kasofsk",
+            "value": "per-job-only",
+            "updated_at": "2026-08-12 22:07:13"
+        }
+    ]
+}

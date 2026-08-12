@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "quint": {
+      "command": "npx",
+      "args": ["@dpdanpittman/mcp-server-quint"]
+    }
+  }
+}

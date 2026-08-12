@@ -1,0 +1,4 @@
+node_modules/
+_apalache-out/
+traces/*.itf.json
+.quint/

@@ -5,6 +5,10 @@ core: the job-state machine and the dispatcher built on it. The model exists to
 verify the safety invariants the dispatcher relies on and to settle the
 documented termination/livelock question about the rework cycle.
 
+**Current status: [docs/model-status.md](docs/model-status.md)** — what is
+determined (proved, and to what bound), what is unknown, and what violations
+were found, in one document.
+
 ## Source of truth
 
 The model transcribes chuggernaut, not the other way around. The load-bearing

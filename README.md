@@ -124,4 +124,7 @@ checks run.
   rework.
 - **v4** — authoring/revoke: draft editing, batches, revoke fan-out.
 - **v5** — trace conformance: replaying recorded chuggernaut traces against
-  the model.
+  the model. Design landed — see
+  [docs/trace-conformance.md](docs/trace-conformance.md) (replay audit: 8 of
+  11 golden traces replayable against v1 today; `just itf` emits the ITF
+  traces the generation direction consumes).

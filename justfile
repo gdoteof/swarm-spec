@@ -10,6 +10,7 @@ typecheck:
     npx quint typecheck specs/chuggernaut/mc/mc_liveness.qnt
     npx quint typecheck specs/chuggernaut/mc/mc_livelock.qnt
     npx quint typecheck specs/chuggernaut/tests/table_test.qnt
+    find specs/chuggernaut/tests/conformance -name '*.qnt' | sort | xargs -rn1 npx quint typecheck
 
 # Run the Quint unit tests.
 test:
@@ -41,6 +42,17 @@ verify-liveness:
 itf:
     npx quint run specs/chuggernaut/mc/mc_small.qnt --main=mc_small --max-samples=1 --max-steps=25 --out-itf=traces/sample.itf.json
 
-# Full check pipeline (what CI runs).
+# Regenerate the committed trace-replay conformance tests (check.sh Stage 7)
+# from a chuggernaut checkout — env CHUGGERNAUT_DIR, defaulting to the dev
+# checkout path Stage 7 also probes. The output is deterministic; Stage 7's
+# drift guard fails if the committed files differ from a regeneration.
+conformance-gen:
+    python3 scripts/gen-conformance.py --chuggernaut "${CHUGGERNAUT_DIR:-/tmp/claude-1000/-home-geoff-claude-p/5d6f43fd-980a-4cc1-9c8d-a9824d42c9dc/scratchpad/chuggernaut}" --out specs/chuggernaut/tests/conformance/
+
+# Run only the trace-replay conformance tests (the quint half of Stage 7).
+conformance:
+    find specs/chuggernaut/tests/conformance -name 'conformance_*_test.qnt' | sort | xargs -rn1 npx quint test
+
+# Full check pipeline (what CI runs), Stages 1-7.
 check:
     bash scripts/check.sh

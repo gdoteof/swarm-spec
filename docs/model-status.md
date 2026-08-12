@@ -4,8 +4,7 @@ Epistemic state of the swarm-spec Quint model of chuggernaut's orchestration
 core — what is proved (and to what bound), what is reproduced or newly
 discovered, and what the model cannot yet answer.
 
-As of **2026-08-12, main @ `917d009` + PR9 (trace generation)**. Every
-number below is re-derivable
+As of **2026-08-12, main @ `3365084`**. Every number below is re-derivable
 with the commands in [§7](#7-re-deriving-everything); sources are
 `specs/chuggernaut/machine.qnt` (Invariants/Temporal sections),
 `scripts/check.sh` (stage comments carry the measured timings, bounds, and
@@ -24,7 +23,7 @@ model/tooling; **OUT OF SCOPE** = deferred to the v2–v4 roadmap.
 
 | # | Claim | Status | Method | Where |
 |---|-------|--------|--------|-------|
-| 1 | The transition table matches chuggernaut `state.rs:22-45` (verbatim, clause-order-preserving) | PROVED (finite function) | `quint test` 6/6: the Rust `table_edges` enumeration (32 legal + 24 illegal edges, same order) plus whole-state-space checks quantified over all 144 ordered pairs | `table.qnt`, `tests/table_test.qnt`; check Stage 2 |
+| 1 | The transition table matches chuggernaut `state.rs:22-45` (verbatim, clause-order-preserving) | PROVED (finite function) | `quint test` 7/7: the Rust `table_edges` enumeration (32 legal + 24 illegal edges, same order), whole-state-space quantified checks, and `fullLegalSetIsExactTest` — an iff over all 144 ordered pairs against the explicit 40-edge legal relation | `table.qnt`, `tests/table_test.qnt`; check Stage 2 |
 | 2 | Every decider emits only table-legal transitions (`stepRespectsTable` — the table as independent oracle) | PROVED to depth 4; TESTED to depth 40 | Apalache exhaustive `--max-steps=4`; 2,000 random traces × depth 40 | `machine.qnt`; check Stages 4–5 |
 | 3 | The other 9 safety invariants (budgets, gas ≥ 0, queue hygiene, escalation ⇔ human task, DAG shape) | PROVED to depth 4; TESTED to depth 40 | same as row 2 (`allInvariants`) | `machine.qnt`; check Stages 4–5 |
 | 4 | Invariant checking is non-vacuous (all 4 witnesses hit) | TESTED | seeded 50,000-trace run, per-witness zero-hit gate | check Stage 4 |
@@ -196,7 +195,7 @@ Three evidence tiers, strongest first.
 
 | What | Why the claim is depth-independent |
 |------|-------------------------------------|
-| The transition table (`table.qnt`) | A pure finite function over 12×12 = 144 ordered pairs, transcribed verbatim (clause order preserved, first match wins) from `state.rs:22-45`. `quint test`: the Rust `table_edges` enumeration (32 legal + 24 illegal edges, same order) plus whole-state-space checks quantified over all 144 pairs (terminal states absorb to every target, every non-terminal may revoke, allowed ⇒ non-terminal source). 6 test runs, 6 passing. PR #1 additionally recorded a full 144-pair cross-check against an independently hand-derived adjacency (full agreement; not committed as a test). |
+| The transition table (`table.qnt`) | A pure finite function over 12×12 = 144 ordered pairs, transcribed verbatim (clause order preserved, first match wins) from `state.rs:22-45`. `quint test` 7/7: the Rust `table_edges` enumeration (32 legal + 24 illegal edges, same order), whole-state-space checks quantified over all 144 pairs (terminal states absorb to every target, every non-terminal may revoke, allowed ⇒ non-terminal source). `fullLegalSetIsExactTest` additionally pins the entire 40-edge legal relation with an iff over all 144 pairs. 7 test runs, 7 passing. PR #1 additionally recorded a full 144-pair cross-check against an independently hand-derived adjacency (full agreement; not committed as a test). |
 | The termination proof *structure* | `quiescentlySettles` is discharged by well-founded descent: `termMeasure ≥ 0` plus "every step except the `noopSettle` stutter and the envActive-gated operator actions strictly decreases `termMeasure`". Those premises are ordinary safety invariants (`quiescentDescent`); the descent *argument* on top of them — a nonnegative integer measure cannot strictly decrease forever, so a quiesced run must eventually take `noopSettle`, whose guard **is** `allSettledOrWedged` — is depth-independent. `machine.qnt` lists every action's exact measure delta by hand; the bounded checks below exercise every line of that table. |
 
 To be precise about the residue: the premises are machine-checked only to

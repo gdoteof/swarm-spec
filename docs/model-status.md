@@ -95,6 +95,9 @@ environment-stops switch: one-way, and it gates the operator actions
 the `LConflictOrGateFail` landing outcome. Work *failure* stays enabled when
 quiesced — it is the job's own product, not environment churn.
 
+Code-level map: see [model-map.md](model-map.md) for this picture at code
+grain — every `step` branch with its guard, nondet draw, and decider arm.
+
 ## 3. The job lifecycle, formally
 
 The v1 machine models the post-release lifecycle. Budgets on the edges:
@@ -104,6 +107,10 @@ consumes no budget at all** — only deadline gas — which is the documented
 livelock edge; and **every entry to Work charges one unit of deadline gas**
 (dispatch, eval rework, gate rework, operator retry of a Work escalation —
 but not same-cycle work retries).
+
+Code-level map: [model-map.md §3](model-map.md#3-edge-provenance) traces
+every edge below — and every table edge no decider emits — to the exact
+decider arm, label, and guard.
 
 ```mermaid
 stateDiagram-v2

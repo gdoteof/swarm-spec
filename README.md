@@ -9,6 +9,10 @@ documented termination/livelock question about the rework cycle.
 determined (proved, and to what bound), what is unknown, and what violations
 were found, in one document.
 
+Code-level map: [docs/model-map.md](docs/model-map.md) — the module graph,
+every `step` branch wired to its decider, and each transition-table edge
+traced to the code that emits it.
+
 ## Source of truth
 
 The model transcribes chuggernaut, not the other way around. The load-bearing

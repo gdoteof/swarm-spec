@@ -8,6 +8,9 @@
 /// (chuggernaut crates/domain/src/decide/mod.rs).
 module chug_machine {
   import chug_types.* from "./types"
+  // The §2.1 transition table — imported ONLY by the PR3 invariants below.
+  // Deciders never consult it, so it stays an independent oracle.
+  import chug_table.* from "./table"
 
   /// Number of jobs in the graph (ids 1..N_JOBS).
   const N_JOBS: int
@@ -105,7 +108,8 @@ module chug_machine {
         evalReworks: 0,
         gateReworks: 0,
         deadlineLeft: DEADLINE,
-        humanTaskOpen: false
+        humanTaskOpen: false,
+        wasEscalated: false
       }),
       readyQ' = range(1, N_JOBS + 1).select(j => depsOf.get(j) == Set()),
       envActive' = true,
@@ -222,4 +226,167 @@ module chug_machine {
     quiesce,
     noopSettle
   }
+
+  // ==========================================================================
+  // === Invariants (PR3) =====================================================
+  // ==========================================================================
+  // These live INSIDE chug_machine (option (a) of the design) because Quint
+  // 0.32 has no way for a separate module to see another module's
+  // instantiated vars: a `chug_invariants` module importing chug_machine
+  // would create a SECOND instance with its own jobs/readyQ, disjoint from
+  // the one mc_small steps. Defining them here lets them close over the real
+  // vars/consts, and mc_small's wildcard import of its chug_machine instance
+  // re-exposes every name below, so `--invariant=allInvariants` and
+  // `--witnesses ...` resolve in --main=mc_small's scope.
+  //
+  // The model analogue of chuggernaut crates/dispatcher/src/invariants.rs
+  // (`check_invariants`): each Rust check_* maps to a named val here.
+  // No counterpart is needed for rdeps_inverts_deps (v1 stores no reverse
+  // index), merge_queue_is_wrapup (merge queue deferred to v3), or
+  // one_live_job_per_schedule (v1 has no schedules).
+
+  /// Set of a list's elements (Quint 0.32 has no List.toSet builtin).
+  pure def listToSet(l: List[int]): Set[int] =
+    l.foldl(Set(), (s, x) => s.union(Set(x)))
+
+  /// THE headline check: every transition the last step recorded is a row of
+  /// the §2.1 table (chuggernaut state.rs:22-45 `assert_transition`).
+  /// Deciders deliberately never consult `allowedTransition`, so this audits
+  /// every decide function against the table as an independent oracle — the
+  /// model-level form of `Core::set_state` calling `assert_transition` on
+  /// every write.
+  val stepRespectsTable: bool =
+    lastStep.transitions.foldl(true, (ok, t) => ok and allowedTransition(t.from, t.to))
+
+  /// invariants.rs `ready_queue_only_ready` (spec §3.1): the ready queue
+  /// holds only known, currently-Ready jobs, and holds each at most once.
+  val readyQueueOnlyReady: bool = and {
+    readyQ.indices().forall(i =>
+      allJobs.contains(readyQ[i]) and jobs.get(readyQ[i]).state == Ready),
+    listToSet(readyQ).size() == readyQ.length()
+  }
+
+  /// States in which a job has ever entered Work. Note Done is included —
+  /// see activeIsExecuting.
+  pure def everWorked(s: JobState): bool =
+    s == Work or s == Evaluation or s == WrapUp or s == Escalated or s == Done
+
+  /// invariants.rs `active_is_executing` (§3.2/§3.3), adjusted to the claim
+  /// v1 actually maintains. Chuggernaut's form is "an ExecState exists iff
+  /// the job is Work/Evaluation/WrapUp/Escalated" — existence, because the
+  /// ExecState is DELETED when a job settles. The model's `attempt` is a
+  /// plain counter with no deletion, so the true v1 claim is:
+  ///
+  ///   attempt > 0  iff  the job has ever entered Work
+  ///                (state in {Work, Evaluation, WrapUp, Escalated, Done})
+  ///
+  /// Why each state sits on its side of the iff:
+  /// - Work: dispatch/reworks/op-retry set attempt := 1 on every entry.
+  /// - Evaluation/WrapUp: reached only from Work/Evaluation with attempt
+  ///   untouched; op-retry resume (PEvaluation/PWrapUp) also keeps it ≥ 1.
+  /// - Escalated: only escalates out of Work/Evaluation/WrapUp, attempt kept
+  ///   (mirrors chuggernaut, where Escalated still holds its ExecState).
+  /// - Done: only from WrapUp (attempt ≥ 1) and decideLand never zeroes it —
+  ///   the one deliberate divergence from the Rust existence check.
+  /// - Ready/Blocked/Stalled: attempt == 0 — init gives 0, Stalled arises
+  ///   only pre-work (Blocked→Stalled), stalled-retry re-queues without
+  ///   touching attempt, and no edge returns to Ready/Blocked after a job
+  ///   has ever been dispatched.
+  /// - Revoked: unreachable in v1 (no decider emits it); vacuously fine.
+  val activeIsExecuting: bool =
+    allJobs.forall(j => (jobs.get(j).attempt > 0) iff everWorked(jobs.get(j).state))
+
+  /// invariants.rs `terminal_is_absorbing` (§2.1): a terminal job is
+  /// invisible to scheduling — never in the ready queue. (State-level
+  /// absorption — nothing transitions OUT of Done/Revoked — is already
+  /// covered by stepRespectsTable, since the table forbids every such row.)
+  val terminalIsAbsorbing: bool =
+    readyQ.indices().forall(i => not(isTerminal(jobs.get(readyQ[i]).state)))
+
+  /// Spec §2.1 Evaluation→Work guard: budgeted reworks never exceed
+  /// `rework_budget` (decideEval increments only under `< REWORK_BUDGET`).
+  val evalReworksWithinBudget: bool =
+    allJobs.forall(j => jobs.get(j).evalReworks <= REWORK_BUDGET)
+
+  /// Spec §3.2: attempt starts at 1 per cycle and same-cycle retries stop at
+  /// `work_retries`, so attempt never exceeds WORK_RETRIES + 1.
+  val attemptWithinRetries: bool =
+    allJobs.forall(j => jobs.get(j).attempt <= WORK_RETRIES + 1)
+
+  /// Spec §3.5 deadline gas stays a resource: never negative (every
+  /// decrement is guarded by `deadlineLeft > 0`), never above its initial
+  /// grant (nothing refunds gas).
+  val deadlineNonNegative: bool =
+    allJobs.forall(j =>
+      jobs.get(j).deadlineLeft >= 0 and jobs.get(j).deadlineLeft <= DEADLINE)
+
+  /// The UNBUDGETED gate-rework loop (spec §3.3 "Bounding") is bounded by
+  /// deadline gas alone: each WrapUp→Work rework charges one gas, gas starts
+  /// at DEADLINE and never goes below 0, so gateReworks ≤ DEADLINE. This is
+  /// provable ONLY because decideLand charges gas on the rework arm — delete
+  /// that `deadlineLeft - 1` and this invariant MUST start failing (that
+  /// deletion is exactly the documented livelock with the backstop removed).
+  val gateReworksBoundedByGas: bool =
+    allJobs.forall(j => jobs.get(j).gateReworks <= DEADLINE)
+
+  /// The reconcile-heal precondition ("an Escalated/Stalled job must always
+  /// hold a Pending Human escalation task"), strengthened to the iff v1
+  /// actually maintains: humanTaskOpen is set exactly by the three
+  /// escalation arms (→Escalated) and decideRevalFail (→Stalled), kept by
+  /// decideStalledRetryFail (Stalled→Stalled, flag untouched and still
+  /// required — the task stays open), and cleared exactly by the two ways
+  /// out (decideOpRetry, decideStalledRetry). So a job holds an open Human
+  /// task iff it is Escalated or Stalled.
+  val escalatedHasHumanTask: bool =
+    allJobs.forall(j =>
+      (jobs.get(j).state == Escalated or jobs.get(j).state == Stalled)
+        iff jobs.get(j).humanTaskOpen)
+
+  /// Structural guard for the DAG-by-construction claim (init filters deps
+  /// to strictly smaller ids, and nothing ever rewrites deps): every dep
+  /// edge points at a known job with a strictly smaller id, so the dep
+  /// relation is acyclic at every reachable state, not just at init.
+  val depsAcyclicAndSmaller: bool =
+    allJobs.forall(j => jobs.get(j).deps.forall(d => allJobs.contains(d) and d < j))
+
+  /// All safety invariants, and-ed for `--invariant=allInvariants` and
+  /// `quint verify`.
+  val allInvariants: bool = and {
+    stepRespectsTable,
+    readyQueueOnlyReady,
+    activeIsExecuting,
+    terminalIsAbsorbing,
+    evalReworksWithinBudget,
+    attemptWithinRetries,
+    deadlineNonNegative,
+    gateReworksBoundedByGas,
+    escalatedHasHumanTask,
+    depsAcyclicAndSmaller
+  }
+
+  // === Witnesses (anti-vacuity probes) ======================================
+  // Each val is the INTERESTING condition, used with `quint run --witnesses`:
+  // the simulator reports how many traces hit each one. A witness with zero
+  // hits means the invariants above are being checked against a state space
+  // that never exercises the behavior — green but vacuous. check.sh Stage 4
+  // fails on any zero count.
+
+  /// The happy path completes: every job Done.
+  val witnessAllDone: bool =
+    allJobs.forall(j => jobs.get(j).state == Done)
+
+  /// The unbudgeted gate-rework loop actually loops (≥ 2 reworks for one
+  /// job) — the livelock gateReworksBoundedByGas is bounding is real.
+  val witnessGateReworkTwice: bool =
+    allJobs.exists(j => jobs.get(j).gateReworks >= 2)
+
+  /// A job that went through escalation (ghost wasEscalated) still reached
+  /// Done — the operator-Retry recovery path is exercised end to end.
+  val witnessEscalatedRecovered: bool =
+    allJobs.exists(j => jobs.get(j).wasEscalated and jobs.get(j).state == Done)
+
+  /// A job that started Blocked (nonempty deps) reached Done — the
+  /// dep-recheck unblock cascade is exercised end to end.
+  val witnessBlockedUnblocks: bool =
+    allJobs.exists(j => jobs.get(j).state == Done and jobs.get(j).deps != Set())
 }

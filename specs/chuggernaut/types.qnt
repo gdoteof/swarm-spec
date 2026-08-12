@@ -72,7 +72,12 @@ module chug_types {
     // Stalled/Escalated instead of re-entering Work. Never goes below 0.
     deadlineLeft: int,
     // An operator Human task is open for this job (Escalated/Stalled).
-    humanTaskOpen: bool
+    humanTaskOpen: bool,
+    // GHOST (PR3): the job escalated at least once, ever. Not dispatcher
+    // state — set by the escalation deciders and never cleared, existing
+    // only so the `witnessEscalatedRecovered` anti-vacuity probe can ask
+    // "did a job that went through escalation still reach Done?" exactly.
+    wasEscalated: bool
   }
 
   /// The dispatcher's single-writer state (v1): all jobs, the ready queue,

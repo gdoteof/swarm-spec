@@ -63,7 +63,7 @@ module chug_decide {
           move(withJob(c, j, { ...old, attempt: old.attempt + 1 }),
             j, Work, "work-retry", [])
         else
-          move(withJob(c, j, { ...old, escalatedFrom: PWork, humanTaskOpen: true }),
+          move(withJob(c, j, { ...old, escalatedFrom: PWork, humanTaskOpen: true, wasEscalated: true }),
             j, Escalated, "job-escalated work_retries_exhausted", ["CreateEscalationTask"])
     }
 
@@ -87,7 +87,7 @@ module chug_decide {
           val label =
             if (old.evalReworks >= REWORK_BUDGET) "job-escalated rework_budget_exhausted"
             else "job-escalated job_deadline_exceeded"
-          move(withJob(c, j, { ...old, escalatedFrom: PEvaluation, humanTaskOpen: true }),
+          move(withJob(c, j, { ...old, escalatedFrom: PEvaluation, humanTaskOpen: true, wasEscalated: true }),
             j, Escalated, label, ["CreateEscalationTask"])
     }
 
@@ -109,7 +109,7 @@ module chug_decide {
               deadlineLeft: old.deadlineLeft - 1 }),
             j, Work, "job-rework-started merge_gate_failure", [])
         else
-          move(withJob(c, j, { ...old, escalatedFrom: PWrapUp, humanTaskOpen: true }),
+          move(withJob(c, j, { ...old, escalatedFrom: PWrapUp, humanTaskOpen: true, wasEscalated: true }),
             j, Escalated, "job-escalated job_deadline_exceeded", ["CreateEscalationTask"])
     }
 

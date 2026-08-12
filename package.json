@@ -1,0 +1,10 @@
+{
+  "name": "swarm-spec",
+  "private": true,
+  "scripts": {
+    "check": "bash scripts/check.sh"
+  },
+  "devDependencies": {
+    "@informalsystems/quint": "0.32.0"
+  }
+}

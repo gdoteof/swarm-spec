@@ -218,4 +218,35 @@ else
 fi
 
 echo
+echo "=== Stage 8: trace conformance (generation round-trip) ==="
+# The generation direction of docs/trace-conformance.md §3: seeded,
+# witness-targeted simulator runs (the negated-witness / expected-violation
+# trick — the ITF counterexample the simulator dumps IS the targeted trace;
+# seeds pinned in scripts/gen-candidates.sh, rust backend reproduces them
+# exactly) are projected to candidate golden YAMLs by scripts/itf-to-golden.py
+# and round-trip verified: the emitted YAML is re-parsed and aligned
+# step-for-step against the ITF's lastStep sequence — transitions exact,
+# effect sequences equal in the canonical §4 alphabet, with the YAML side
+# re-read through the REPLAY direction's golden-effect classifier
+# (scripts/conformance_vocab.py — the same tables Stage 7's generator uses)
+# and skipped bookkeeping steps checked to carry nothing modeled. This proves
+# the projection is loss-free w.r.t. the modeled vocabulary; executing the
+# candidates against chuggernaut is the upstream half (untested here — §3.4).
+gen_tmp=$(mktemp -d)
+bash scripts/gen-candidates.sh "$gen_tmp"
+# Drift guard: the committed example candidates under docs/examples/ must be
+# exactly what the pinned-seed pipeline regenerates (like Stage 7's guard,
+# but self-contained — no chuggernaut checkout involved).
+for f in candidate_clean_lifecycle.yaml candidate_gate_rework_loop.yaml; do
+  if ! diff -u "docs/examples/$f" "$gen_tmp/$f"; then
+    rm -rf "$gen_tmp"
+    echo "FAIL: docs/examples/$f drifts from the pinned-seed regeneration" >&2
+    echo "      (regenerate: just itf-golden, then copy traces/candidates/$f)" >&2
+    exit 1
+  fi
+done
+rm -rf "$gen_tmp"
+echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
+
+echo
 echo "=== All checks passed ==="

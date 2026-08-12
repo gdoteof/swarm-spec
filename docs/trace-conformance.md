@@ -1,14 +1,19 @@
 # Trace conformance: model ↔ golden traces (design)
 
-Status: **replay direction IMPLEMENTED** (PR8); the generation direction
-remains design + ITF plumbing only (`just itf`). This document specifies the
-conformance harness between the Quint model and chuggernaut's golden decision
-traces. The replay generator is `scripts/gen-conformance.py`; its output is
-committed under `specs/chuggernaut/tests/conformance/`; `scripts/check.sh`
-Stage 7 runs it, with a drift guard against a chuggernaut checkout when one
-is available (`just conformance-gen` regenerates). §2.4 records exactly where
-the implementation diverged from this design. The ITF→YAML converter (§3) is
-still follow-on work.
+Status: **both directions IMPLEMENTED** — replay in PR8, generation in PR9.
+This document specifies the conformance harness between the Quint model and
+chuggernaut's golden decision traces. Replay: `scripts/gen-conformance.py`
+compiles the golden fixtures into Quint runs committed under
+`specs/chuggernaut/tests/conformance/`; `scripts/check.sh` Stage 7 runs
+them, with a drift guard against a chuggernaut checkout when one is
+available (`just conformance-gen` regenerates). Generation:
+`scripts/itf-to-golden.py` projects simulator ITF traces into candidate
+golden YAMLs (`just itf-golden`; committed examples in `docs/examples/`),
+round-trip verified in check Stage 8. The shared effect vocabulary both
+directions project through has one executable home,
+`scripts/conformance_vocab.py` (§4). §2.4 and §3.5 record exactly where the
+implementations diverged from this design; §3.6 is the handoff note for the
+chuggernaut owner.
 
 References (paths relative to the chuggernaut repo root):
 
@@ -250,7 +255,10 @@ deltas:
    output committed under `specs/chuggernaut/tests/conformance/` as
    `conformance_<fixture>_test.qnt`; the model-side allowlist is the shared
    generated module `conformance_allowlist.qnt`, and both halves of the §4
-   projection are maintained in the generator — its single home. Licensing:
+   projection are maintained in one Python home — originally the generator
+   itself, since PR9 the shared module `scripts/conformance_vocab.py`, which
+   both conformance directions import (the refactor is byte-neutral: Stage
+   7's drift guard proves the generated output did not change). Licensing:
    chuggernaut has no license file, so nothing from its tree is vendored;
    the generator reads the YAMLs at runtime and every generated file carries
    a provenance header (upstream URL + commit, source fixture, regeneration
@@ -292,18 +300,28 @@ Replay results at upstream `72dfa61`: all 9 generated modules pass
 8 driver steps (invariant-checked), 13 modeled-effect comparisons. No
 transition-level divergence; the one effect-level finding is delta 3.
 
-## 3. Generation direction (model → golden candidates) — later
+## 3. Generation direction (model → golden candidates) — IMPLEMENTED (PR9)
 
 The reverse arrow: let the simulator explore, then hand its traces to
 chuggernaut as *candidate scenarios* — model-based conformance testing. The
-plumbing landed in this PR:
+pipeline:
 
 ```sh
-just itf   # = npx quint run specs/chuggernaut/mc/mc_small.qnt --main=mc_small \
-           #     --max-samples=1 --max-steps=25 --out-itf=traces/sample.itf.json
+just itf         # plumbing (PR5): one random ITF trace to traces/sample.itf.json
+just itf-golden  # PR9: seeded, witness-targeted runs (scripts/gen-candidates.sh)
+                 # projected to traces/candidates/*.yaml by
+                 # scripts/itf-to-golden.py and round-trip verified (§3.4)
 ```
 
-`traces/*.itf.json` is gitignored (only `traces/.gitkeep` is committed).
+`traces/*.itf.json` and `traces/candidates/` are gitignored working output
+(only `traces/.gitkeep` is committed). The two committed example candidates
+live in `docs/examples/` — `candidate_clean_lifecycle.yaml` (all jobs land,
+including a Blocked→Ready dep unblock) and `candidate_gate_rework_loop.yaml`
+(the documented budget-free gate loop of model-status.md §5a, three
+unbudgeted `merge_gate_failure` reworks of one job) — regenerated and
+diffed by check Stage 8, so they can
+never drift from the pinned seeds that produce them. They are model output
+projected by our own tooling (no upstream file content), safe to commit.
 
 ### 3.1 What's in the ITF file (evidence)
 
@@ -343,43 +361,189 @@ and state 4's, an escalation:
 The golden step is sitting right there; only ITF value decoding stands
 between them.
 
-### 3.2 ITF → YAML projection sketch
+### 3.2 ITF → YAML projection (`scripts/itf-to-golden.py`)
 
-A small converter (`scripts/itf_to_golden.py`, follow-on PR):
+As implemented (deltas from the original sketch are marked §3.5):
 
 1. **Load** `states` from the ITF JSON; find the `lastStep` key by suffix
    match on the qualified name (instance prefixes vary by `--main`).
 2. **Decode ITF values**: Quint sum constructors arrive as
    `{ "tag": "Ready", "value": { "#tup": [] } }` → take `tag`; ints as
-   `{ "#bigint": "1" }` → int. `JobState` constructor names match
-   chuggernaut's Rust enum exactly (by design, `types.qnt`), so `tag` **is**
-   the YAML state name — no mapping table.
+   `{ "#bigint": "1" }` → int; `#map`/`#set`/`#tup` recursively. `JobState`
+   constructor names match chuggernaut's Rust enum exactly (by design,
+   `types.qnt`), so `tag` **is** the YAML state name — no mapping table
+   (every decoded state name is still checked against the 12-name spelling
+   set as a decoding guard). `#set` decodes sorted — ITF set order is
+   arbitrary, sorting keeps projection deterministic. Non-unit variant
+   payloads and unknown encodings are hard errors, per the §4 faithfulness
+   rule.
 3. **Project each state `i ≥ 1`** to a YAML step from its `lastStep`:
-   - skip records with label `init`, `noop-settle`, or `quiesce` (model
-     bookkeeping, no observable decision);
-   - `event:` ← the model label (unlike golden fixtures, generated
-     scenarios get *machine* labels — strictly more precise);
-   - `transitions:` ← decoded `[{job, from, to}]`;
-   - `effects:` ← model→golden normalization (§4): `DeleteBranch` →
+   - **skip** records labeled `init`, `noop-settle`, or `quiesce` — model
+     bookkeeping with no observable decision and no counterpart in the
+     golden schema (the initial snapshot, the settled/wedged stutter, and
+     the one-way environment-goes-quiet switch). The skip is *checked*, not
+     assumed: a skipped record must carry no transitions and no modeled
+     effects, else projection aborts — so skipping provably loses nothing
+     in the modeled vocabulary. Every other label must be in the script's
+     explicit emit list (all 15 decision labels `decide.qnt` emits); an
+     unknown label is a hard error, classified by a human;
+   - `event:` ← the model label prefixed **`model:`** (e.g.
+     `model:dispatch`), so candidates are always distinguishable from
+     hand-written fixtures — golden `event` strings are author prose (§1
+     fact 2), these are machine labels, strictly more precise;
+   - `transitions:` ← decoded `[{job, from, to}]` verbatim (exactly one per
+     step — v1 decisions carry exactly one transition, asserted);
+   - `effects:` ← model→golden normalization via
+     `conformance_vocab.model_to_golden` (§4): `DeleteBranch` →
      `DeleteBranch job/<j>` using the step's job id,
      `CreateEscalationTask` / `CreateHumanTask` → `PutTask
-     Human(escalation)`; drop effects outside the shared vocabulary.
-4. **Emit** `steps: [...]` plus a scenario header comment recording the
-   instance constants and init DAG (deps per job) so the chuggernaut
-   harness can set up the same graph and budgets.
+     Human(escalation)`, `SquashMerge` → `SquashMerge`; effects outside the
+     shared vocabulary are dropped, unknown effect strings are hard errors.
+4. **Emit** `steps: [...]` under a provenance header comment recording the
+   source ITF, the exact seeded regeneration command (`--note` lines from
+   `scripts/gen-candidates.sh`), and the scenario init from ITF state 0 —
+   each job's initial state, deps, and deadline gas, plus the initial ready
+   queue — so a chuggernaut harness can set up the same graph and budgets.
 
-The consumer is a `golden_traces.rs`-style harness on the chuggernaut side:
-build the scenario's jobs/deps, drive the dispatcher along the candidate's
-event sequence, record with `TraceSink`, and diff — through the same
-allowlist, since the implementation's trace will contain effects the
-candidate never mentions.
+### 3.3 Interesting-trace selection (`scripts/gen-candidates.sh`)
+
+Random depth-25 traces are mostly noise; the candidates worth handing
+upstream are *targeted*. The selection trick is the expected-violation run:
+ask the simulator to check the **negation** of the interesting property as
+an `--invariant` at a pinned seed, and the counterexample ITF it dumps is
+exactly the trace that exhibits it, deterministically (the rust backend
+reproduces seeds bit-for-bit). The two pinned candidates:
+
+| candidate | run | targets |
+| --------- | --- | ------- |
+| `candidate_clean_lifecycle.yaml` | `mc_small`, seed `0x37a1792d8159488`, expected-fail of `not(witnessAllDone and witnessBlockedUnblocks)`, depth 14 | near-minimal full-graph happy path: 3 jobs land, one after a `Blocked→Ready` unblock; also exercises the skip policy (a mid-trace `quiesce`) |
+| `candidate_gate_rework_loop.yaml` | `mc_livelock`, seed `0xa5110d572bfbd1d5` (check Stage 6a's own seed), expected-fail of `gateReworksWithinBudgets`, depth 40 | the documented spec.md:1265 budget-free gate loop: 3 `merge_gate_failure` reworks of one job, `rework_budget` untouched — **no hand-written golden fixture covers this path** |
 
 What generation buys beyond replay: candidates for the decision paths **no
 golden fixture covers today** (§2.1: same-cycle `work-retry`,
 `work_retries_exhausted` and `job_deadline_exceeded` escalations, the whole
-`operator-retry` / `stalled-retry` resumption family), and — with
-`--max-samples` cranked up — mechanically generated rare interleavings like
-the mc_livelock gate-rework loop as an executable implementation test.
+`operator-retry` / `stalled-retry` resumption family — all validated
+round-trippable in PR9's shakeout), and mechanically generated rare
+interleavings like the gate-rework loop as an executable implementation
+test.
+
+### 3.4 Round-trip validation (check Stage 8)
+
+The meaningful in-repo check: **the projection is loss-free w.r.t. the
+modeled vocabulary.** `itf-to-golden.py --roundtrip` re-parses the emitted
+YAML and aligns it step-for-step against the ITF's `lastStep` sequence:
+
+- transitions must match **exactly** (and every state name must be a legal
+  `JobState` spelling);
+- `event` must be exactly `model:` + the model label;
+- effect sequences must be equal **in the canonical §4 alphabet**, with the
+  YAML side re-read through the *replay* direction's golden-effect
+  classifier (`classify_golden_effect`) and the ITF side through the
+  model-side allowlist (`model_canonical`) — two independently maintained
+  tables, so a bug in either mapping, or in the ITF decoding, breaks the
+  equation rather than cancelling out. `DeleteBranch job/<n>` additionally
+  has its job id checked against the step's transition;
+- skipped bookkeeping records are re-checked to carry no transitions and no
+  modeled effects (the skip loses nothing);
+- the YAML must be exactly consumed (no missing or trailing steps).
+
+check.sh Stage 8 runs the full pipeline at the pinned seeds (generate ITF →
+project → round-trip) and then diffs the projected YAMLs against
+`docs/examples/` — the generation-side drift guard, self-contained (no
+chuggernaut checkout involved). What Stage 8 does **not** prove: that the
+candidates *execute* against chuggernaut. That is the upstream half (§3.6),
+untested until the chuggernaut owner runs it.
+
+### 3.5 Implementation deltas (PR9 — what shipped vs the §3.2 sketch)
+
+1. **Names/paths.** `scripts/itf-to-golden.py` (not `itf_to_golden.py`);
+   the shared vocabulary refactored out of `gen-conformance.py` into
+   `scripts/conformance_vocab.py` (imported by both directions; Stage 7's
+   drift guard proves the refactor changed no generated byte); selection
+   lives in `scripts/gen-candidates.sh` (= `just itf-golden`).
+2. **The `model:` event prefix** — the sketch had bare machine labels;
+   the prefix makes machine provenance unmistakable in a directory of
+   mixed fixtures.
+3. **The skip policy is enforced, not assumed** (`init`/`noop-settle`/
+   `quiesce` must be empty of modeled content), and the label vocabulary is
+   closed: `operator-retry-unreachable` (decide.qnt's defensive
+   match-totalizer) is deliberately *not* classified, so its appearance in
+   a trace fails projection loudly.
+4. **Effects are emitted even when empty** (`effects: []`) — one schema for
+   every step; golden fixtures omit keys freely, candidates don't.
+5. **Scenario constants in the header are partial.** The ITF carries no
+   instance constants, so the header records what state 0 proves (initial
+   states, deps, deadline gas, ready queue) and the budgets arrive as
+   `--note` provenance from gen-candidates.sh, not from the trace itself.
+
+### 3.6 The upstream handoff (for the chuggernaut owner)
+
+*This section is written for the chuggernaut maintainer as first reader.
+Context in one line: [swarm-spec](../README.md) maintains a formal model of
+your dispatcher's job-state machine; it already replays your eleven golden
+trace fixtures against the model (§2), and this section describes the
+reverse artifact — **candidate** golden traces generated from the model for
+your harness to execute.*
+
+**What a candidate is.** A YAML file in your golden-trace schema (`steps:`
+of `{event, transitions: [{job, from, to}], effects: [str]}`), produced by
+projecting a model-checker trace, not by recording your dispatcher. State
+names are spelled exactly as your `JobState` enum spells them. Two examples
+ship in `docs/examples/`; `just itf-golden` regenerates them and can
+produce more (any seed, any targeted property). Every candidate's header
+records the exact seeded command that produced it and the job graph +
+budgets to set the scenario up with.
+
+**How you would consume one.** Drop the YAML into
+`crates/dispatcher/tests/traces/` and drive it with a
+`golden_traces.rs`-style test: build the header's jobs/deps with the
+header's budgets, release, then drive the dispatcher through the step
+sequence, recording with `TraceSink` and diffing at the end. Two mapping
+tables you need, both small:
+
+- **Events**: candidate `event` strings are machine labels prefixed
+  `model:` (`model:dispatch`, `model:eval-passed`,
+  `model:job-rework-started merge_gate_failure`, …) — the §2.1 table read
+  right-to-left tells you which dispatcher stimulus each one names
+  (dispatch the queue head; complete the work task successfully; deliver a
+  failing eval verdict; …).
+- **Effects**: candidates carry only the three-entry modeled vocabulary,
+  spelled your way — `SquashMerge`, `DeleteBranch job/<n>`,
+  `PutTask Human(escalation)` (§4 table). Your recorded trace will contain
+  *more* effects (every `PublishEvent …`, task/gate machinery); compare
+  through the same projection (keep those three, normalize
+  `AdvanceDefault` → `SquashMerge`, drop the rest), not by equality.
+
+**What would NOT line up today — the honest paragraph.** (1) *No release
+prefix*: candidates start jobs where release leaves them (`Ready`/
+`Blocked`), so your recorder's opening `Frozen→Ready` transitions and
+`job-created`/`job-released` events have no candidate counterpart — set up
+and release first, align from the first dispatch. (2) *The YAML is
+assertion data, not a driver script*: labels name **outcomes**
+(`model:eval-passed` means "the eval round passes"), so your test must
+force each nondeterministic outcome — e.g. the gate-rework-loop candidate
+needs a landing that fails the gate three times in a row, which in your
+system means a default branch that keeps moving against the job; some
+candidates may be awkward or impossible to stage, and *that is signal* (a
+candidate your harness can prove unreachable is a model bug we want
+reported — §4). (3) *The SquashMerge/AdvanceDefault split*: the model
+cannot see merge gates (v3), so a candidate's clean landing always says
+`SquashMerge`; if your scenario setup engages the gate, your trace will
+record `AdvanceDefault` instead — equivalent under the projection above,
+different as strings (this repo's §5e finding, docs/model-status.md).
+(4) *Parameterized effect arguments*: the model has no branch names, task
+ids, or gate ids — `DeleteBranch job/<n>` is reconstructed from the step's
+job id, but everything else you parameterize (task payloads, event bodies,
+`merge-gate/<n>` branches) is absent. (5) *No KV shortcuts*: two of your
+fixtures finish an upstream job by writing the store directly; the model
+can't, so candidates spell out the full dependency lifecycle step by step
+— expect candidates to be longer than the fixture you would have written.
+
+**Status**: the projection itself is verified loss-free in this repo
+(§3.4), on the pinned seeds and a randomized shakeout. Whether the
+candidates execute in your harness is **untested** — that run is yours,
+and either outcome is valuable (§4: a rejected candidate is a model bug to
+tighten or a real divergence to fix).
 
 ## 4. The conformance relation
 
@@ -426,3 +590,11 @@ the filtered lists into the shared vocabulary (v2: task/fan-out grain; v3:
 gate machinery and the conflict/gate-CI/gate-fix split of
 `LConflictOrGateFail`; v4: authoring/revoke), monotonically strengthening
 the relation until the projection is the identity.
+
+The vocabulary's one executable home is `scripts/conformance_vocab.py`:
+the golden→canonical classifier (replay, §2, and the round-trip's YAML
+side), the model→canonical mapping (mirrored by the generated
+`conformance_allowlist.qnt` the replay tests execute, whose text is emitted
+from the same file), and the model→golden spelling used by generation
+(§3). Both directions import it, so the two halves of the projection cannot
+drift apart.

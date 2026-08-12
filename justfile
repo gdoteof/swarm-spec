@@ -53,6 +53,15 @@ conformance-gen:
 conformance:
     find specs/chuggernaut/tests/conformance -name 'conformance_*_test.qnt' | sort | xargs -rn1 npx quint test
 
-# Full check pipeline (what CI runs), Stages 1-7.
+# Generation direction (docs/trace-conformance.md §3): produce the two seeded,
+# witness-targeted candidate golden traces under traces/candidates/ (gitignored
+# working output) — ITF emitted by expected-fail simulator runs at pinned
+# seeds, projected to golden-schema YAML by scripts/itf-to-golden.py and
+# round-trip verified. The committed copies live in docs/examples/; check.sh
+# Stage 8 regenerates and diffs them.
+itf-golden:
+    bash scripts/gen-candidates.sh
+
+# Full check pipeline (what CI runs), Stages 1-8.
 check:
     bash scripts/check.sh

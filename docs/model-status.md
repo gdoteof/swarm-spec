@@ -4,8 +4,8 @@ Epistemic state of the swarm-spec Quint model of chuggernaut's orchestration
 core — what is proved (and to what bound), what is reproduced or newly
 discovered, and what the model cannot yet answer.
 
-As of **2026-08-12, main @ `1d80f7b` + PR8 (trace replay)**. Every number
-below is re-derivable
+As of **2026-08-12, main @ `917d009` + PR9 (trace generation)**. Every
+number below is re-derivable
 with the commands in [§7](#7-re-deriving-everything); sources are
 `specs/chuggernaut/machine.qnt` (Invariants/Temporal sections),
 `scripts/check.sh` (stage comments carry the measured timings, bounds, and
@@ -37,7 +37,8 @@ model/tooling; **OUT OF SCOPE** = deferred to the v2–v4 roadmap.
 | 11 | `quint verify --temporal` is unusable on this stack (Z3 segfault; TLC backend broken + fairness-free) | DISCOVERED (tooling) | crash forensics in the Temporal section; liveness discharged as safety instead | `machine.qnt` Temporal; [§5d](#5d-tooling-findings) |
 | 12 | Invariants and descent beyond Apalache's depth bound (4, resp. 6) | TESTED | randomized only: depth 40, 2k/20k/50k traces per run | check Stages 4, 6c |
 | 13 | The model reproduces each replayable golden scenario step-for-step: transition sequence + model labels exactly, effect sequence through the v1 allowlist | ESTABLISHED for 8/11 scenarios (+ the transition skeleton of a 9th); 3 fixtures gated on v2–v4, effects outside the allowlist unchecked | generated replay runs (`quint test`, check Stage 7), drift-guarded against the fixtures at upstream `72dfa61` | `specs/chuggernaut/tests/conformance/`; [§6c](#6c-model--code-conformance); [§5e](#5e-replay-finding-gated-promote-is-advancedefault-not-squashmerge) |
-| 14 | Staged evaluation, merge queue/gate mechanics, capacity queue, task records, crash/reconcile, authoring/batches/revoke | OUT OF SCOPE | v2–v4 roadmap (capacity queue and crash/reconcile currently unscheduled) | README roadmap; [§6b](#6b-abstracted-away-in-v1) |
+| 14 | The generation direction (model → candidate golden fixtures): every model decision projects loss-free (at the modeled grain) into a golden-schema candidate step | ESTABLISHED — projection loss-free by round-trip at the pinned seeds/depths (clean lifecycle `0x37a1792d8159488` @ depth 14, gate loop `0xa5110d572bfbd1d5` @ depth 40) plus a randomized shakeout; **UNKNOWN**: the candidates *executing* in chuggernaut's harness — untested, needs an upstream run | `itf-to-golden.py --roundtrip` (check Stage 8): transitions exact, effects compared in the canonical alphabet through both directions' independent classifiers, `docs/examples/` drift-guarded | `scripts/itf-to-golden.py`, `scripts/conformance_vocab.py`, `docs/examples/`; [trace-conformance.md §3](trace-conformance.md) |
+| 15 | Staged evaluation, merge queue/gate mechanics, capacity queue, task records, crash/reconcile, authoring/batches/revoke | OUT OF SCOPE | v2–v4 roadmap (capacity queue and crash/reconcile currently unscheduled) | README roadmap; [§6b](#6b-abstracted-away-in-v1) |
 
 ## 2. Chuggernaut as the model sees it
 
@@ -494,8 +495,21 @@ points, two of them mechanical:
   compute the same function on arbitrary inputs.
 
 The generation direction (model → candidate golden traces for chuggernaut's
-own harness) remains unbuilt; `just itf` emits the ITF traces it will
-consume.
+own harness, PR9) is built and split-verified: what is ESTABLISHED is the
+**projection** — `scripts/itf-to-golden.py` turns any simulator ITF trace
+into a golden-schema candidate YAML, and the Stage 8 round-trip proves the
+candidate is a loss-free image of the model trace at the modeled grain
+(transitions exact; effects equal in the canonical vocabulary, re-read
+through the replay direction's classifier — two independent tables). Two
+seeded example candidates are committed under `docs/examples/`
+(drift-guarded), including the budget-free gate-rework loop no hand-written
+fixture covers. What is **UNKNOWN** is the other half: whether the
+candidates execute in chuggernaut's `golden_traces.rs`-style harness — that
+run is upstream's, untested here, and
+[trace-conformance.md §3.6](trace-conformance.md) is the self-contained
+handoff note for it (including what will not line up: no release prefix,
+outcome-labels needing a driver, the SquashMerge/AdvanceDefault fold,
+absent effect parameters).
 
 ## 7. Re-deriving everything
 
@@ -503,7 +517,7 @@ consume.
 
 | Claim | Command |
 |-------|---------|
-| everything below, in order (Stages 1–7) | `just check` (= `bash scripts/check.sh`) |
+| everything below, in order (Stages 1–8) | `just check` (= `bash scripts/check.sh`) |
 | all .qnt files typecheck | `just typecheck` (Stage 1) |
 | transition table = state.rs table (row 1) | `just test` (Stage 2) |
 | the machine simulates without error (smoke) | Stage 3 (500 traces × depth 40) |
@@ -516,7 +530,8 @@ consume.
 | descent premises exhaustive to depth 6 (row 7) | `just verify-liveness` (~2.5 min) |
 | golden traces replay against the model (row 13) | Stage 7 = `just conformance` (`quint test` over `specs/chuggernaut/tests/conformance/`) |
 | committed replay tests are in sync with the fixtures + generator (row 13) | Stage 7 drift guard, with a chuggernaut checkout at `CHUGGERNAUT_DIR`; regenerate via `just conformance-gen` |
-| ITF trace emission (generation-direction plumbing, row 13) | `just itf` |
+| ITF trace emission (generation-direction plumbing, row 14) | `just itf` |
+| candidate generation + loss-free round-trip + docs/examples/ in sync (row 14) | Stage 8; `just itf-golden` regenerates into `traces/candidates/` |
 
 Stages are not individually addressable; a stage-N claim is re-established
 by running `bash scripts/check.sh` and reading that stage's output. Seeds

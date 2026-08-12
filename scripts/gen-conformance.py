@@ -31,12 +31,18 @@ model<->code divergence.
 """
 
 import argparse
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
+
+# The shared modeled-effect vocabulary (docs/trace-conformance.md §4) — one
+# home for both conformance directions. The golden-side classifier used here
+# and the ALLOWLIST_MODULE Quint text this generator emits both live there,
+# as do the model-side mappings scripts/itf-to-golden.py (the generation
+# direction) uses, so the two directions can never disagree on the allowlist.
+from conformance_vocab import ALLOWLIST_MODULE, VocabError, classify_golden_effect
 
 GENERATOR_CMD = (
     "python3 scripts/gen-conformance.py "
@@ -94,60 +100,11 @@ NON_MARKER_JOB_EVENTS = {
     "job-rebase-conflict",     # v3: rebase telemetry inside a work segment
 }
 
-# Golden effects outside the v1 modeled vocabulary (docs/trace-conformance.md
-# §4): projected away before comparison. Explicitly enumerated so an unknown
-# effect string fails generation instead of being silently dropped.
-UNMODELED_GOLDEN_EXACT = {
-    "CreateSquashCandidate",   # v3 gate machinery
-    "LaunchGateStage",         # v3
-    "LaunchGateFix",           # v3
-    "RebaseOntoWithConflict",  # v3
-    "EnterWork",               # v3 queue/rework plumbing
-}
-UNMODELED_GOLDEN_PATTERNS = [
-    re.compile(r"PublishEvent \S+"),          # segmentation signals, not compared
-    re.compile(r"DeleteBranch merge-gate/\d+"),  # v3: gate branch, not the job branch
-]
-
-
-def golden_canonical(effect: str):
-    """Golden-side half of the §4 allowlist projection.
-
-    Model-side half lives in the generated conformance_allowlist.qnt (both
-    halves are emitted from this file — the allowlist has one home).
-
-    Delta from the design doc (recorded in docs/trace-conformance.md):
-    `AdvanceDefault` normalizes to canonical "SquashMerge" instead of being
-    filtered as v3 machinery. Gated landings promote the squash candidate by
-    fast-forwarding the default branch (AdvanceDefault) and never emit a
-    literal SquashMerge; v1 cannot see whether a gate is present, so its
-    canonical "SquashMerge" means "the job's work was promoted into the
-    default branch" — true of both promotion mechanisms.
-    """
-    if effect in ("SquashMerge", "AdvanceDefault"):
-        return "SquashMerge"
-    if re.fullmatch(r"DeleteBranch job/\d+", effect):
-        return "DeleteBranch"
-    if effect == "PutTask Human(escalation)":
-        return "HumanEscalationTask"
-    return None
-
-
-def classify_effect(effect: str):
-    """Return the canonical name, or None for a known-unmodeled effect.
-
-    Raises on vocabulary this generator has never seen — the faithfulness
-    rule: unknown effects must be classified by a human, not dropped.
-    """
-    canon = golden_canonical(effect)
-    if canon is not None:
-        return canon
-    if effect in UNMODELED_GOLDEN_EXACT:
-        return None
-    for pat in UNMODELED_GOLDEN_PATTERNS:
-        if pat.fullmatch(effect):
-            return None
-    raise GenError(f"unclassified golden effect {effect!r} — extend the allowlist tables")
+# The golden-side half of the §4 allowlist projection: canonical name, or
+# None for a known-unmodeled effect; raises VocabError on vocabulary the
+# shared tables have never seen (the faithfulness rule — unknown effects must
+# be classified by a human, not dropped). One home: scripts/conformance_vocab.py.
+classify_effect = classify_golden_effect
 
 
 # --------------------------------------------------------------------------
@@ -474,39 +431,6 @@ def emit_fixture(name: str, scen: dict, plan: dict, emitted, final_states,
     return "".join(out)
 
 
-ALLOWLIST_MODULE = '''\
-/// The v1 modeled-effect allowlist (docs/trace-conformance.md §4) — the model
-/// side of the shared effect vocabulary, in ONE place. Both halves of the
-/// projection are maintained in scripts/gen-conformance.py (the golden-side
-/// half runs at generation time; this module is emitted from the same file).
-///
-/// Canonical v1 vocabulary and both mappings:
-///
-///   canonical             model side                golden side
-///   --------------------  ------------------------  --------------------------
-///   SquashMerge           SquashMerge               SquashMerge | AdvanceDefault
-///   DeleteBranch          DeleteBranch              DeleteBranch job/<n>
-///   HumanEscalationTask   CreateEscalationTask,     PutTask Human(escalation)
-///                         CreateHumanTask
-///
-/// `AdvanceDefault` (gated landings promote the squash candidate by
-/// fast-forwarding default, emitting no literal SquashMerge) maps to canonical
-/// SquashMerge = "the job's work was promoted into the default branch" — a
-/// delta from the design doc recorded in docs/trace-conformance.md.
-/// Everything else is projected away: each filtered effect is a claim the v1
-/// model does not yet make (the honesty boundary; v2–v4 shrink it).
-module conformance_allowlist {
-  pure def modeledEffects(effects: List[str]): List[str] =
-    effects.foldl([], (acc, e) =>
-      if (e == "SquashMerge" or e == "DeleteBranch")
-        acc.append(e)
-      else if (e == "CreateEscalationTask" or e == "CreateHumanTask")
-        acc.append("HumanEscalationTask")
-      else acc)
-}
-'''
-
-
 def git_out(repo: Path, *args) -> str:
     return subprocess.run(["git", "-C", str(repo), *args],
                           capture_output=True, text=True, check=True).stdout.strip()
@@ -560,7 +484,7 @@ def main() -> int:
             ydata = yaml.safe_load((traces_dir / f"{name}.yaml").read_text())
             plan = align(name, ydata, scen)
             emitted, final_states = simulate(name, scen, plan)
-        except GenError as e:
+        except (GenError, VocabError) as e:
             print(f"error: {name}.yaml: {e}", file=sys.stderr)
             return 1
         text = emit_fixture(name, scen, plan, emitted, final_states, upstream_url, commit)

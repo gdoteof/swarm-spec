@@ -127,12 +127,18 @@ checks run.
 - **v3** — merge queue: landing order, merge gate, conflict/gate-failure
   rework.
 - **v4** — authoring/revoke: draft editing, batches, revoke fan-out.
-- **v5** — trace conformance: replaying recorded chuggernaut traces against
-  the model. **Replay direction done** — `scripts/gen-conformance.py`
-  compiles the golden traces into Quint runs
-  (`specs/chuggernaut/tests/conformance/`, check Stage 7): 8 of 11 golden
+- **v5** — trace conformance: **complete, both directions**
+  ([docs/trace-conformance.md](docs/trace-conformance.md)).
+  *Replay* (golden → model): `scripts/gen-conformance.py` compiles the
+  golden traces into Quint runs
+  (`specs/chuggernaut/tests/conformance/`, check Stage 7) — 8 of 11 golden
   scenarios plus one partial skeleton replay green, transitions exact and
-  effects through the modeled-vocabulary allowlist; see
-  [docs/trace-conformance.md](docs/trace-conformance.md). The generation
-  direction (model → candidate golden traces) remains — `just itf` emits
-  the ITF traces it will consume.
+  effects through the modeled-vocabulary allowlist.
+  *Generation* (model → candidate golden fixtures):
+  `scripts/itf-to-golden.py` projects seeded simulator traces into
+  candidate golden YAMLs (`just itf-golden`; committed examples in
+  [docs/examples/](docs/examples/), including the budget-free gate-rework
+  loop no hand-written fixture covers), round-trip-verified loss-free in
+  check Stage 8; executing the candidates in chuggernaut's own harness is
+  the documented upstream handoff (trace-conformance.md §3.6), untested
+  here.

@@ -40,6 +40,80 @@ npx quint typecheck specs/chuggernaut/table.qnt
 npx quint test specs/chuggernaut/tests/table_test.qnt
 ```
 
+`just verify-liveness` runs the deeper (slower) Apalache pass over the PR4
+liveness layer; check.sh Stage 6 runs the fast version of every liveness
+check.
+
+## The headline theorem
+
+Chuggernaut's spec openly carries a potential livelock. docs/spec.md §3.3
+"Bounding" (line 1265):
+
+> repeated gate failures don't consume `rework_budget`, so a job that
+> genuinely can't integrate could loop Work → Evaluation → WrapUp (gate) →
+> Work. [...] `job_deadline` is the backstop.
+
+This PR turns that sentence into machine-checked artifacts (the formal
+claims live in the "Temporal (PR4)" section of
+`specs/chuggernaut/machine.qnt`; the checks in `scripts/check.sh` Stage 6).
+
+**The loop is real (mc_livelock, expected-fail, reproduced).** On the
+deadline-free instance (`DEADLINE=1000`, modeling a graph with no
+`job_deadline` set), the invariant `gateReworksWithinBudgets` — "no job
+takes more gate reworks than every budget combined" — is violated: the
+counterexample trace is one job cycling
+`dispatch → work-succeeded → eval-passed → job-rework-started
+merge_gate_failure` three times over, with `rework_budget` untouched. Gate
+reworks are metered by nothing but deadline gas; without a deadline, by
+nothing.
+
+**Termination is restored two ways, each with a precise caveat:**
+
+- **(a) Environment quiescence** — the theorem `quiescentlySettles`: if the
+  environment eventually goes permanently quiet, every run reaches
+  `allSettledOrWedged`. Two honesty clauses baked into that statement:
+  - *Operator actions count as environment.* The model gates operator
+    retries on `envActive`, and the termination measure shows why it must:
+    the only steps that don't strictly decrease the measure (besides the
+    settled/wedged stutter) are the operator-churn actions — Retry resuming
+    Evaluation/WrapUp charges no gas, so escalate → retry → fail → escalate
+    is a second livelock that a finite `job_deadline` does NOT bound. In the
+    real system, "wait for things to calm down" has to include the operator
+    walking away, or a well-meaning retry loop defeats every budget.
+  - *Settled-or-wedged, not settled.* Bare "eventually all jobs settle" is
+    false even under quiescence: a job Blocked behind a dep that escalated
+    before quiesce is stranded forever (the wedge — reproduced as the
+    expected-fail of `wedgeFree`).
+- **(b) The `job_deadline` gas backstop** — every `merge_gate_failure`
+  rework charges one unit of gas, so `gateReworks ≤ DEADLINE` (PR3's
+  `gateReworksBoundedByGas`, Apalache-verified) and each gate rework
+  strictly decreases the termination measure. The gate loop specifically is
+  always finite when a deadline is set — but per (a), the deadline alone
+  does not give whole-system termination, because operator churn consumes
+  no gas.
+
+**What was proved, at what bound, by which method.** `quint verify
+--temporal` is unusable in this toolchain (quint 0.32 + Apalache 0.56.1
+crashes with `assertion failed` translating the temporal encoding to SMT;
+the TLC backend both trips an `ApaFoldSeqLeft` evaluation bug and emits no
+fairness, under which TLC's stuttering semantics refute any
+eventually-property vacuously). So the temporal claims are discharged as
+safety, per the tables in machine.qnt:
+
+| Claim | Encoding | Result | Coverage |
+| --- | --- | --- | --- |
+| gate loop exceeds all budgets (spec.md:1265) | `gateReworksWithinBudgets` on `mc_livelock` | violated (expected) | deterministic seeded trace, 3 unbudgeted gate reworks |
+| the wedge (naive quiescent termination is false) | `wedgeFree` on `mc_liveness` | violated (expected) | deterministic seeded trace |
+| quiescent termination (`quiescentlySettles`) | well-founded descent: `quiescentDescent` = measure ≥ 0 ∧ every non-exempt step strictly decreases it | holds | Apalache exhaustive to depth 4 (Stage 6) / depth 6 (`just verify-liveness`) on `mc_liveness`; 20k random traces to depth 40 on both instances |
+| gas bounds the gate loop | `gateReworksWithinBudgets` on `mc_liveness` (DEADLINE=2) + PR3 `gateReworksBoundedByGas` | holds | same bounds as above / PR3 Stage 5 |
+
+The descent step is the proof's load-bearing part: bounded checking
+validates every line of the hand-derived delta table (machine.qnt lists
+each action's exact measure delta), and the well-founded-descent argument
+on top of it is depth-independent. The bounded Apalache passes are
+exhaustive only to the stated depths — that limit is stated wherever the
+checks run.
+
 ## Roadmap
 
 - **v1** — job lifecycle + budgets: the transition table, escalation/stall

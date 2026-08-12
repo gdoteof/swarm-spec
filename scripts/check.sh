@@ -58,4 +58,97 @@ JVM_ARGS=-Xmx4G npx quint verify specs/chuggernaut/mc/mc_small.qnt \
   --main=mc_small --invariant=allInvariants --max-steps=4
 
 echo
+echo "=== Stage 6: liveness (quiescent termination + documented-livelock reproduction) ==="
+# Temporal-checker status (measured on this repo, quint 0.32 + Apalache
+# 0.56.1): `quint verify --temporal` dies on true and false properties
+# alike — Z3 segfaults natively (SIGSEGV in libz3 bool_rewriter) while the
+# temporal-rewritten step relation is translated to SMT, surfaced by quint
+# as `error: assertion failed`; `--backend=tlc` trips a TLC evaluation bug on
+# the compiled init (`ApaFoldSeqLeft`) AND emits INIT/NEXT with no fairness,
+# under which TLC's stuttering-closed liveness semantics would refute any
+# eventually-property vacuously. So the liveness layer is discharged as
+# SAFETY (see the "Temporal (PR4)" section of machine.qnt for the proof
+# shape):
+#   - the TRUE theorem (quiescentlySettles) via the well-founded descent
+#     invariant quiescentDescent — randomized to depth 40 here, Apalache
+#     bounded to depth 4 here (17s measured; depth 6 at ~2.5min lives in
+#     `just verify-liveness`);
+#   - the FALSE claims via machine-checked reachability of their livelock /
+#     wedge configurations (the expected-FAIL runs below).
+
+# 6a — THE headline expected-fail. chuggernaut docs/spec.md §3.3 "Bounding"
+# (line ~1265): repeated gate failures don't consume rework_budget, so a job
+# that genuinely can't integrate loops Work -> Evaluation -> WrapUp (gate)
+# -> Work; job_deadline is the only backstop. On mc_livelock (DEADLINE=1000
+# ~ no deadline set) this run MUST find a trace where one job takes that
+# loop beyond every budget combined (gateReworks = 3 > WORK_RETRIES +
+# REWORK_BUDGET = 2) — the documented livelock as a machine-checked trace.
+# Seed pinned (rust backend reproduces exactly); found unseeded at roughly
+# 1 in 60k traces.
+if livelock_out=$(npx quint run specs/chuggernaut/mc/mc_livelock.qnt --main=mc_livelock \
+  --invariant=gateReworksWithinBudgets \
+  --max-samples=200000 --max-steps=40 --seed=0xa5110d572bfbd1d5 --backend=rust 2>&1); then
+  echo "FAIL: gateReworksWithinBudgets unexpectedly HELD on mc_livelock —" >&2
+  echo "      the documented budget-free gate loop was not reproduced" >&2
+  exit 1
+fi
+echo "$livelock_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_livelock run failed for a reason other than the expected violation:" >&2
+  echo "$livelock_out" | tail -5 >&2
+  exit 1
+}
+loop_hits=$(echo "$livelock_out" | grep -c 'job-rework-started merge_gate_failure' || true)
+if [ "$loop_hits" -lt 3 ]; then
+  echo "FAIL: violation trace shows only $loop_hits merge_gate_failure reworks (expected >= 3)" >&2
+  exit 1
+fi
+echo "Livelock reproduced: $loop_hits unbudgeted 'merge_gate_failure' gate reworks of one job"
+echo "(> WORK_RETRIES + REWORK_BUDGET = 2) — spec.md:1265 as a machine-checked trace."
+
+# 6b — expected-fail: the wedge. terminationUnderQuiescence (eventually
+# settled, over bare allSettled) is FALSE: after an escalation, quiescing
+# strands a Blocked dependent forever — allWedged but not allSettled is
+# reachable, and in that state noopSettle is the only enabled action. This
+# is exactly why the honest theorem (quiescentlySettles) is stated over
+# allSettledOrWedged.
+if wedge_out=$(npx quint run specs/chuggernaut/mc/mc_liveness.qnt --main=mc_liveness \
+  --invariant=wedgeFree \
+  --max-samples=50000 --max-steps=40 --seed=0xa70ac2d5a29cd724 --backend=rust 2>&1); then
+  echo "FAIL: wedgeFree unexpectedly HELD on mc_liveness — the wedge was not reproduced" >&2
+  exit 1
+fi
+echo "$wedge_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_liveness wedge run failed for a reason other than the expected violation:" >&2
+  echo "$wedge_out" | tail -5 >&2
+  exit 1
+}
+echo "$wedge_out" | grep -q 'state: Blocked' && echo "$wedge_out" | grep -q 'envActive: false' || {
+  echo "FAIL: wedge violation trace lacks the Blocked-after-quiesce signature" >&2
+  exit 1
+}
+echo "Wedge reproduced: allWedged-but-not-allSettled is reachable (Blocked job stranded"
+echo "behind an Escalated dep after quiesce) — bare eventually(allSettled) is false."
+
+# 6c — the positive theorem, randomized: quiescentDescent (every step but
+# the noopSettle stutter and the envActive-gated operator-churn actions
+# strictly decreases a nonnegative measure) holds to depth 40 across 20k
+# traces on BOTH instances; on mc_liveness the gas backstop also keeps
+# gateReworks within budgets (contrast with 6a).
+npx quint run specs/chuggernaut/mc/mc_liveness.qnt --main=mc_liveness \
+  --invariant='quiescentDescent and gateReworksWithinBudgets' \
+  --max-samples=20000 --max-steps=40
+npx quint run specs/chuggernaut/mc/mc_livelock.qnt --main=mc_livelock \
+  --invariant=quiescentDescent --max-samples=20000 --max-steps=40
+
+# 6d — the positive theorem, exhaustive over all nondet choices to depth 4
+# (Apalache, ~17s measured; depth 6 -> 2m24s lives in `just
+# verify-liveness`). mc_livelock is Apalache-intractable (DEADLINE=1000
+# pushed depth 4 past 10 minutes), so its descent coverage is 6c's
+# randomized run. Bounded = evidence at this depth; the unbounded claim
+# rests on the delta-table argument in machine.qnt, every line of which
+# these checks exercise.
+JVM_ARGS=-Xmx4G npx quint verify specs/chuggernaut/mc/mc_liveness.qnt \
+  --main=mc_liveness --invariant=quiescentDescent --max-steps=4
+
+echo
 echo "=== All checks passed ==="

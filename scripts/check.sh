@@ -249,7 +249,7 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation + citations (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-4 + notes-reconciliation + citations (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
@@ -295,6 +295,20 @@ echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation + citations (type
 # random allInvariants coverage on all FOUR instances; the citations run is
 # NEW here for exactly that reason (its only random allInvariants coverage
 # used to ride the removed twin).
+# The MULTI-REPO PR (roadmap PR 4; gate: isolation invariants) rides the
+# same runs once more with REPOS ENABLED: every instance sets N_REPOS = 2,
+# arrivals draw the ticket's authored target repo, and every landing
+# attempt draws the environment's per-attempt branchMoved choice with the
+# outcome drawn from landOutcomes(moved) — LandFailed drawable only on a
+# moved branch (the envActive standing rule: an explicitly named nondet
+# event on the step record, never a stored flag). allInvariants gained
+# landingIsolation, quietRepoLandsCleanly, and reposWellFormed, and
+# 9b-DET gained a fifth deterministic module (the isolation gate's
+# witness half: quiet-clean landing, moved rework + wall attributed,
+# cross-repo dep unblock). The two new draws changed the simulator's
+# nondet structure YET AGAIN, so every 9b-RND seed was re-examined:
+# cascadeParkNever and stageAdvanceNever SURVIVED; freeClimbNever and
+# carryNever died and were re-pinned — forensics at each probe.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -327,19 +341,27 @@ echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + ran
 # allInvariants along their traces — survive every future nondet drift
 # without a seed hunt.
 #
-# 9b-DET — the LOAD-BEARING layer: four deterministic machine traces
-# (specs/chuggy/tests/chuggy_witness_test.qnt; mechanism note in its
-# header — `init.then(apply(decide*))` with guard-checked drivers, so
+# 9b-DET — the LOAD-BEARING layer: five deterministic machine-trace
+# modules (specs/chuggy/tests/chuggy_witness_test.qnt; mechanism note in
+# its header — `init.then(apply(decide*))` with guard-checked drivers, so
 # every accepted trace is a trace of `step`). Each run proves its shape
 # REACHABLE, asserts the witness verdict AT the witnessing step (violated
 # exactly where the shape fires, holding where it must not), and asserts
 # allInvariants after EVERY step — which is what subsumes the removed
 # Stage 9 pinned twins. Zero seeds anywhere. Mutation-verified
-# (2026-08-13, this PR): a sign-flip on stepDescends' RetryFree arm
-# (either conjunct) and a carry-despite-intersection mutant in
-# spawnEvalScoped are each caught by this layer alone.
+# (2026-08-13, the witness-hardening PR): a sign-flip on stepDescends'
+# RetryFree arm (either conjunct) and a carry-despite-intersection mutant
+# in spawnEvalScoped are each caught by this layer alone. The multi-repo
+# module (PR 4) extends this layer per its convention — the machine's two
+# new nondet draws each exercised on both branches deterministically
+# (quiet -> clean landing; moved -> gate rework and wall, each attributed
+# to the ticket's own repo; the repo pick off-default with a cross-repo
+# dep unblock) — and has NO paired random probe: landing attempts are
+# dense in random exploration, so the unseeded Stage 9 runs are its
+# random side.
 for m in chuggy_witness_free_test chuggy_witness_cascade_test \
-         chuggy_witness_stage_test chuggy_witness_carry_test; do
+         chuggy_witness_stage_test chuggy_witness_carry_test \
+         chuggy_witness_multirepo_test; do
   echo "--- quint test --main=$m specs/chuggy/tests/chuggy_witness_test.qnt"
   npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
 done
@@ -397,14 +419,24 @@ warn_probe() {
 # trace after the first completion event. The notes-PR seed
 # 0x240a2d65e1e3e305 was verified GENUINELY DEAD before re-pinning: its
 # full 50k-sample budget ran to completion with no violation ([ok], 31s).
-# The new seed was found unseeded within ~1.8M samples (~2m16s, rust
-# backend) and reproduces the violation on its first trace (141ms), with
+# That seed was found unseeded within ~1.8M samples (~2m16s, rust
+# backend) and reproduced the violation on its first trace (141ms), with
 # the operator-retry pipeline-resume signature in the trace.)
+# (Re-pinned AGAIN for the multi-repo PR — the fifth re-pin, and the
+# first under the warn-only regime (no build was held hostage): arrive
+# grew the authored repo draw (2 choices per arrival) and land grew the
+# branchMoved draw with the outcome drawn from landOutcomes(moved),
+# shifting every trace from its first arrival. The citations-PR seed
+# 0xcfadb0ec5ca34c85 was verified GENUINELY DEAD before re-pinning: its
+# full 50k-sample budget ran to completion with no violation ([ok],
+# ~30s). The new seed was found unseeded within ~3.6M samples (~3m31s,
+# rust backend) and reproduces the violation on its first trace (43ms),
+# with the operator-retry pipeline-resume signature in the trace.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
-  --max-samples=50000 --max-steps=40 --seed=0xcfadb0ec5ca34c85 --backend=rust 2>&1); then
+  --max-samples=50000 --max-steps=40 --seed=0x8095f27f767afa07 --backend=rust 2>&1); then
   if echo "$free_out" | grep -q '\[ok\]'; then
-    warn_probe freeClimbNever "seed 0xcfadb0ec5ca34c85 no longer reaches the free climb ([ok] over its 50k budget)"
+    warn_probe freeClimbNever "seed 0x8095f27f767afa07 no longer reaches the free climb ([ok] over its 50k budget)"
   else
     echo "FAIL: freeClimbNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
     echo "$free_out" | tail -5 >&2
@@ -435,6 +467,9 @@ fi
 # it is deliberately NOT re-pinned.) (Citations-PR forensics: re-examined
 # once more against the citation-draw nondet shift — the seed SURVIVED
 # again: violates within its budget (96ms) with both signature greps hit;
+# deliberately NOT re-pinned.) (Multi-repo-PR forensics: re-examined
+# against the repo-draw + branchMoved nondet shifts — SURVIVED a third
+# time: violates within its budget (45ms) with both signature greps hit;
 # deliberately NOT re-pinned.)
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=cascadeParkNever \
@@ -472,6 +507,9 @@ fi
 # the eval-stage-passed signature, so it is deliberately NOT re-pinned.
 # Citations-PR forensics: re-examined against the citation-draw nondet
 # shift — SURVIVED again: violates within its budget (~5.1s) with the
+# eval-stage-passed signature; deliberately NOT re-pinned. Multi-repo-PR
+# forensics: re-examined against the repo-draw + branchMoved shifts —
+# SURVIVED a third time: violates within its budget (646ms) with the
 # eval-stage-passed signature; deliberately NOT re-pinned.)
 if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=stageAdvanceNever \
@@ -509,14 +547,26 @@ fi
 # exist. Found unseeded within ~481k samples (~13s, rust backend) after
 # the shared instances proved too diffuse — carryNever HELD over ~2M
 # unseeded samples on mc_chuggy_budgeted (~2m37s), which is exactly why
-# the probe instance exists (the mc_livelock move). Reproduces the
+# the probe instance exists (the mc_livelock move). Reproduced the
 # violation on its first trace (41ms) with both the CarryEvalVerdicts
 # effect and a TSCarried live task in the trace.)
+# (Re-pinned for the multi-repo PR — this probe's first re-pin, under the
+# warn-only regime: the land action's branchMoved draw dilutes the
+# LandFailed density (failure is drawable only on a moved branch — the
+# probe's gate-rework choreography needs it) and the arrival's repo draw
+# shifts every trace from birth. The citations-PR seed
+# 0xd21f881a768a43bc was verified GENUINELY DEAD before re-pinning: its
+# full 20k-sample budget ran to completion with no violation ([ok], ~9s).
+# The new seed was found unseeded within ~1.95M samples (~2m7s, rust
+# backend — rarer than the citations-era ~481k find, consistent with the
+# diluted failure draw) and reproduces the violation on its first trace
+# (96ms), with both the CarryEvalVerdicts effect and a TSCarried live
+# task in the trace.)
 if carry_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
   --invariant=carryNever \
-  --max-samples=20000 --max-steps=40 --seed=0xd21f881a768a43bc --backend=rust 2>&1); then
+  --max-samples=20000 --max-steps=40 --seed=0xd1eb524283a15d73 --backend=rust 2>&1); then
   if echo "$carry_out" | grep -q '\[ok\]'; then
-    warn_probe carryNever "seed 0xd21f881a768a43bc no longer reaches a carry ([ok] over its 20k budget)"
+    warn_probe carryNever "seed 0xd1eb524283a15d73 no longer reaches a carry ([ok] over its 20k budget)"
   else
     echo "FAIL: carryNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
     echo "$carry_out" | tail -5 >&2

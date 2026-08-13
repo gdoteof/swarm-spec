@@ -60,7 +60,24 @@
 /// module, so instances cannot share a module); each module's consts are
 /// byte-identical to the mc/mc_chuggy.qnt instance the random layer samples,
 /// so the deterministic trace speaks about the same machine. check.sh Stage
-/// 9b runs all four via `quint test --main=<module>`; `just chuggy` mirrors.
+/// 9b runs all five via `quint test --main=<module>`; `just chuggy` mirrors.
+///
+/// THE MULTI-REPO PR (roadmap PR 4) extends THIS layer first, per its own
+/// convention: the machine's two NEW nondet draws — the authored repo pick
+/// at arrival and the environment's per-attempt branchMoved choice at the
+/// landing — each get deterministic runs exercising BOTH branches
+/// (chuggy_witness_multirepo_test: the choice pinned MOVED with the gate
+/// rework and the landing wall attributed; pinned QUIET with the landing
+/// succeeding; and the repo pick exercised off-default with a cross-repo
+/// dep chain unblocking). The existing four modules updated mechanically:
+/// arrivals author repo 1, and every doLand names its branchMoved choice
+/// with the outcome guarded by the machine's own landOutcomes draw rule
+/// (a quiet failure is not drawable — the drivers reference the same
+/// definition the `land` action draws from, per the guard discipline
+/// above). The fifth module has NO paired random probe: its shapes are
+/// exercised by every unseeded allInvariants run (landing attempts are
+/// dense — unlike the carry), so the deterministic runs alone carry the
+/// gate.
 
 /// SHAPE 1 — THE FREE CLIMB (freeClimbNever, mc_chuggy_retryfree consts).
 /// A ticket burns both accounts down to gas 0, parks on the desk from a
@@ -86,16 +103,18 @@ module chuggy_witness_free_test {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 
   // --- Deterministic drivers (see the file header: machine actions with
   // --- their nondet picks named; guards checked in the pre-state) --------
-  action doArrive(deps_: Set[int], prog: List[Stage]): bool = all {
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
     canArrive,
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
-    apply(decideArrive(core, deps_, prog))
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -134,7 +153,7 @@ module chuggy_witness_free_test {
 
   run freeClimbDeterministicTest =
     init
-      .then(doArrive(Set(), progFlat1))
+      .then(doArrive(Set(), progFlat1, 1))
       .expect(and { tickets.get(1).phase == PDraft, allInvariants })
       .then(doRelease(1))
       .expect(and { tickets.get(1).phase == PPending, allInvariants })
@@ -233,7 +252,7 @@ module chuggy_witness_free_test {
   /// re-entry (standing rule 2).
   run preWorkResumeClimbDeterministicTest =
     init
-      .then(doArrive(Set(), progFlat1))
+      .then(doArrive(Set(), progFlat1, 1))
       .expect(allInvariants)
       .then(doRelease(1))
       .expect(and { isReady(1), allInvariants })
@@ -287,15 +306,17 @@ module chuggy_witness_cascade_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 
   // --- Deterministic drivers (file header; only the ones this shape uses).
-  action doArrive(deps_: Set[int], prog: List[Stage]): bool = all {
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
     canArrive,
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
-    apply(decideArrive(core, deps_, prog))
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -310,15 +331,15 @@ module chuggy_witness_cascade_test {
 
   run cascadeParkDeterministicTest =
     init
-      .then(doArrive(Set(), progFlat1))            // ticket 1
+      .then(doArrive(Set(), progFlat1, 1))            // ticket 1
       .expect(allInvariants)
-      .then(doArrive(Set(1), progFlat1))           // ticket 2 depends on 1
+      .then(doArrive(Set(1), progFlat1, 1))           // ticket 2 depends on 1
       .expect(allInvariants)
       // Release 2: PPending, blocked behind the unreleased Draft 1 — one
       // dependent will be parked from EACH pre-flight phase.
       .then(doRelease(2))
       .expect(and { isBlocked(2), allInvariants })
-      .then(doArrive(Set(2), progFlat1))           // ticket 3: TRANSITIVE dependent of 1
+      .then(doArrive(Set(2), progFlat1, 1))           // ticket 3: TRANSITIVE dependent of 1
       .expect(and { not(tickets.get(3).deps.contains(1)), allInvariants })
       // THE WITNESSED STEP: revoking 1 parks BOTH dependents atomically —
       // 2 out of PPending, 3 out of PDraft (3 never named 1 as a dep: the
@@ -371,15 +392,17 @@ module chuggy_witness_stage_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 
   // --- Deterministic drivers (file header; only the ones this shape uses).
-  action doArrive(deps_: Set[int], prog: List[Stage]): bool = all {
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
     canArrive,
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
-    apply(decideArrive(core, deps_, prog))
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -403,9 +426,10 @@ module chuggy_witness_stage_test {
     reducibleEval.contains(j),
     apply(decideEvalStageReduce(core, j))
   }
-  action doLand(j: int, out: LandOutcome): bool = all {
+  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
     landingTickets.contains(j),
-    apply(decideLand(core, j, out))
+    landOutcomes(moved).contains(out),
+    apply(decideLand(core, j, out, moved))
   }
   action doLandDuplicate(j: int): bool = all {
     doneTickets.contains(j),
@@ -420,7 +444,7 @@ module chuggy_witness_stage_test {
 
   run stageAdvanceDeterministicTest =
     init
-      .then(doArrive(Set(), progStaged))
+      .then(doArrive(Set(), progStaged, 1))
       .expect(and { tickets.get(1).program.length() == 2, allInvariants })
       .then(doRelease(1))
       .expect(allInvariants)
@@ -468,7 +492,7 @@ module chuggy_witness_stage_test {
         tickets.get(1).phase == PLanding,
         allInvariants
       })
-      .then(doLand(1, LandSquashMerge))
+      .then(doLand(1, LandSquashMerge, false))
       .expect(and {
         lastStep.label == "ticket-done",
         tickets.get(1).landings == 1,
@@ -509,15 +533,17 @@ module chuggy_witness_carry_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 
   // --- Deterministic drivers (file header; only the ones this shape uses).
-  action doArrive(deps_: Set[int], prog: List[Stage]): bool = all {
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
     canArrive,
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
-    apply(decideArrive(core, deps_, prog))
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -541,9 +567,10 @@ module chuggy_witness_carry_test {
     reducibleEval.contains(j),
     apply(decideEvalStageReduce(core, j))
   }
-  action doLand(j: int, out: LandOutcome): bool = all {
+  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
     landingTickets.contains(j),
-    apply(decideLand(core, j, out))
+    landOutcomes(moved).contains(out),
+    apply(decideLand(core, j, out, moved))
   }
 
   /// The only authorable program at these bounds (N_TASKS = 1,
@@ -553,7 +580,7 @@ module chuggy_witness_carry_test {
   /// The gate-rework carry, footprints DISJOINT: the carry fires.
   run carryDeterministicTest =
     init
-      .then(doArrive(Set(), progFlat1))
+      .then(doArrive(Set(), progFlat1, 1))
       .expect(allInvariants)
       .then(doRelease(1))
       .expect(allInvariants)
@@ -576,7 +603,7 @@ module chuggy_witness_carry_test {
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // The landing fails: Budgeted(1) buys exactly one gate rework
       // (gate 1 -> 0, gas 2 -> 1); work id 3 spawns.
-      .then(doLand(1, LandFailed))
+      .then(doLand(1, LandFailed, true))
       .expect(and {
         lastStep.label == "rework-started gate_failure",
         tickets.get(1).gateLeft == 0,
@@ -612,7 +639,7 @@ module chuggy_witness_carry_test {
         tickets.get(1).phase == PLanding,
         allInvariants
       })
-      .then(doLand(1, LandAdvanceDefault))
+      .then(doLand(1, LandAdvanceDefault, false))
       .expect(and {
         lastStep.label == "ticket-done",
         tickets.get(1).landings == 1,
@@ -641,7 +668,7 @@ module chuggy_witness_carry_test {
   /// carry here and fail these expects.
   run carryScopeRespectsIntersectionTest =
     init
-      .then(doArrive(Set(), progFlat1))
+      .then(doArrive(Set(), progFlat1, 1))
       .expect(allInvariants)
       .then(doRelease(1))
       .expect(allInvariants)
@@ -655,7 +682,7 @@ module chuggy_witness_carry_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doLand(1, LandFailed))
+      .then(doLand(1, LandFailed, true))
       .expect(allInvariants)
       .then(doTaskDone(1, 3, VPass, Set(1)))       // ...and the gate fix touches region 1
       .expect(allInvariants)
@@ -674,6 +701,254 @@ module chuggy_witness_carry_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doLand(1, LandAdvanceDefault))
+      .then(doLand(1, LandAdvanceDefault, false))
       .expect(and { tickets.get(1).landings == 1, allInvariants })
+}
+
+/// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (the roadmap PR 4 gate's
+/// witness half; mc_chuggy_budgeted consts + N_REPOS = 2). Three runs, one
+/// per branch of the PR's new nondet surface:
+///   - QUIET: a repo-2 ticket (the repo pick exercised off-default) whose
+///     landing attempt the environment chose quiet — the landing MUST
+///     succeed (landOutcomes refuses a quiet failure) and the ticket-done
+///     step carries the quiet attribution. This run is the trace-pinned
+///     half of quietRepoLandsCleanly (the invariant's header is explicit
+///     about the split: per-attempt implication as the state theorem,
+///     THIS trace as the pinned-quiet reading).
+///   - MOVED: the same lifecycle whose attempts the environment chose
+///     moved — the gate rework AND, on the second failure, the
+///     gate-budget wall each carry {repo, branchMoved: true}: the rework
+///     is attributed to the repo whose branch moved, and to nothing else.
+///   - CROSS-REPO DEP: a repo-2 ticket dependent on a repo-1 ticket —
+///     blocked while the dep is unlanded, READY the moment repo 1's
+///     landing makes it Done (the dep gate read Done-ness, not location),
+///     then landing cleanly itself; repo 1's success is drawn under a
+///     MOVED branch, pinning at machine level that a move makes failure
+///     possible, never certain. Each landing resolution is attributed to
+///     its own repo in one trace with both repos live.
+/// allInvariants — now carrying landingIsolation, quietRepoLandsCleanly,
+/// and reposWellFormed — is asserted after EVERY step of all three runs.
+/// NO paired random probe (file header): landing attempts are dense in
+/// random exploration, so the unseeded Stage 9 runs cover the random side;
+/// these deterministic traces alone are the gate.
+module chuggy_witness_multirepo_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 3,
+    N_TASKS = 2,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    GATE_PRICING = Budgeted(1),
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 2,
+    N_REGIONS = 2,
+    N_REPOS = 2
+  ).* from "../domain"
+
+  // --- Deterministic drivers (file header; only the ones these shapes use).
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+  action doDispatch(j: int): bool = all {
+    dispatchableIn(core, j),
+    apply(decideDispatch(core, j))
+  }
+  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+    taskPhaseTickets.contains(j),
+    deliverableTaskIds(core, j).contains(tid),
+    cited_.subseteq(regions),
+    apply(decideTaskDone(core, j, tid, v, cited_))
+  }
+  action doWorkReduce(j: int): bool = all {
+    reducibleWork.contains(j),
+    apply(decideWorkReduce(core, j))
+  }
+  action doEvalReduce(j: int): bool = all {
+    reducibleEval.contains(j),
+    apply(decideEvalStageReduce(core, j))
+  }
+  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
+    landingTickets.contains(j),
+    landOutcomes(moved).contains(out),
+    apply(decideLand(core, j, out, moved))
+  }
+
+  /// Single-stage single-evaluator program: these shapes need the landing
+  /// boundary, not staging (the stage witness owns staging).
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  /// THE QUIET LANDING: the environment chooses the target repo's branch
+  /// quiet for the attempt — the landing succeeds, attributed. (A quiet
+  /// FAILURE is not merely unobserved here: doLand's landOutcomes guard —
+  /// the machine's own draw rule — makes the step undrivable, so this run
+  /// also documents the refusal structurally.)
+  run quietLandDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 2))         // the ticket targets repo 2
+      .expect(and { tickets.get(1).repo == 2, allInvariants })
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
+      .expect(and { lastStep.label == "work-passed", allInvariants })
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // THE WITNESSED STEP: the attempt's branchMoved choice is QUIET —
+      // the landing succeeds and the step is attributed to the ticket's
+      // own repo with the quiet cause on record.
+      .then(doLand(1, LandSquashMerge, false))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.effects == ["SquashMerge"],
+        lastStep.landing == LOAttempt({ repo: 2, branchMoved: false }),
+        tickets.get(1).landings == 1,
+        quietRepoLandsCleanly,                     // the state theorem, on the pinned-quiet step
+        allInvariants
+      })
+
+  /// THE MOVED REWORK, ATTRIBUTED: the environment chooses the branch
+  /// MOVED at both attempts — the first failure buys the Budgeted gate
+  /// rework, the second parks at the gate-budget wall, and BOTH steps
+  /// carry {repo: 1, branchMoved: true}: a landing failed only via its
+  /// own repo's branch moving, and the trace says so each time.
+  run movedReworkAttributedTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))
+      .expect(allInvariants)
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // THE WITNESSED STEP (rework half): the branch MOVED and the
+      // landing failed — Budgeted(1) buys one gate rework (gate 1 -> 0,
+      // gas 2 -> 1; work ids 4, 5), and the step carries the attribution.
+      .then(doLand(1, LandFailed, true))
+      .expect(and {
+        lastStep.label == "rework-started gate_failure",
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).gateLeft == 0,
+        tickets.get(1).gasLeft == 1,
+        allInvariants
+      })
+      .then(doTaskDone(1, 4, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 5, VPass, Set()))
+      .expect(allInvariants)
+      // Silent citations: the eval re-entry respawns in full (id 6).
+      .then(doWorkReduce(1))
+      .expect(and { lastStep.label == "work-passed", allInvariants })
+      .then(doTaskDone(1, 6, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // THE WITNESSED STEP (wall half): the branch moved AGAIN with the
+      // gate account empty — the ticket parks at the gate-budget wall,
+      // and the PARKING step is attributed like the rework was.
+      .then(doLand(1, LandFailed, true))
+      .expect(and {
+        lastStep.label == "ticket-escalated gate_budget_exhausted",
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).phase == PEscalated,
+        tickets.get(1).reason == RsGateBudgetExhausted,
+        tickets.get(1).resumeAt == RLanding,
+        allInvariants
+      })
+
+  /// THE CROSS-REPO DEP CHAIN: ticket 1 targets repo 1, ticket 2 targets
+  /// repo 2 and depends on 1 — the dep gate is LOCATION-BLIND: 2 is
+  /// Blocked exactly while 1 is not Done, and repo 1's landing unblocks
+  /// it with the repos never consulted. Repo 1's success is drawn under
+  /// a MOVED branch (failure is possible there, not certain); repo 2
+  /// lands quiet. One trace, both repos, each landing attributed to its
+  /// own.
+  run crossRepoDepDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))         // ticket 1 -> repo 1
+      .expect(allInvariants)
+      .then(doArrive(Set(1), progFlat1, 2))        // ticket 2 -> repo 2, dep CROSSES repos
+      .expect(and {
+        tickets.get(2).repo == 2,
+        tickets.get(2).deps == Set(1),
+        allInvariants
+      })
+      .then(doRelease(2))
+      .expect(and { isBlocked(2), allInvariants }) // blocked behind the Draft dep
+      .then(doRelease(1))
+      .expect(and {
+        isReady(1),
+        isBlocked(2),                              // still blocked: dep released, not Done
+        allInvariants
+      })
+      .then(doDispatch(1))                         // gas 3 -> 2; ticket 1 work ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // THE WITNESSED STEP: repo 1 lands (moved branch, clean integration
+      // anyway — the move makes failure possible, not certain) and the
+      // repo-2 dependent derives READY in the same post-state: the
+      // cross-repo unblock, no machinery, no repo consulted.
+      .then(doLand(1, LandAdvanceDefault, true))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).phase == PDone,
+        isReady(2),                                // THE cross-repo unblock
+        allInvariants
+      })
+      .then(doDispatch(2))                         // ticket 2's own ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(2, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(2, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(2))
+      .expect(allInvariants)
+      .then(doTaskDone(2, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(2))
+      .expect(allInvariants)
+      // The dependent lands in ITS repo, quiet, attributed to repo 2 —
+      // two repos, two landings, each on its own record.
+      .then(doLand(2, LandSquashMerge, false))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.landing == LOAttempt({ repo: 2, branchMoved: false }),
+        tickets.get(2).phase == PDone,
+        tickets.get(1).landings == 1,
+        tickets.get(2).landings == 1,
+        allInvariants
+      })
 }

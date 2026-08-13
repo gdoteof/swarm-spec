@@ -249,12 +249,17 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PR 1 (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-2 (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
 # exercised under both prices) plus the RetryFree instance (the operator-
 # churn exemption in stepDescends must be exercised by a machine run).
+# PR 2 (authoring lifecycle; gate: revoke cascades proved safe) rides the
+# SAME runs: every instance now starts empty and runs the authoring actions
+# (arrive/freeze/unfreeze/release/revoke), and allInvariants gained
+# revokedNeverLands, cascadeSafety, terminalsAbsorbing, and idsDense — plus
+# a second expected-violation probe in 9b for cascade reachability.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -278,9 +283,12 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
 # Evaluating/Landing climbs the measure and is exactly the CHURN arm that
 # stepDescends exempts. If this run ever passes, that exemption has become
 # dead code (or free retries silently started charging) — fail loudly.
+# (Seed re-pinned for PR 2: the empty-init + authoring actions changed the
+# trace space, so PR 1's seed no longer reaches the escalate-then-free-
+# resume shape; found unseeded within ~50k samples.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
-  --max-samples=20000 --max-steps=40 --seed=0x620f5df53d5beb42 --backend=rust 2>&1); then
+  --max-samples=50000 --max-steps=40 --seed=0x1d4e77a47c8ba09e --backend=rust 2>&1); then
   echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
   echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
   exit 1
@@ -296,6 +304,34 @@ echo "$free_out" | grep -q 'operator-retry' || {
 }
 echo "Free-retry climb reproduced: an uncharged operator resume climbs the measure"
 echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt CHURN set)."
+
+# 9b, second probe (PR 2) — cascade reachability, expected-fail. The
+# witness cascadeParkNever ("no revoke ever parks a dependent") MUST be
+# violated on the budgeted instance: a reachable revoke whose atomic
+# cascade parks at least one dependent (StepRecord with >1 transition) is
+# the machine-level proof that cascadeSafety's green runs above are checked
+# against traces where the cascade actually fires — without it, a fleet
+# whose revokeDoomed set stayed empty would satisfy cascadeSafety
+# vacuously. The unit tests walk the 3-job chain deterministically; this
+# pins the same shape as REACHABLE in the machine.
+if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
+  --invariant=cascadeParkNever \
+  --max-samples=20000 --max-steps=40 --seed=0x5cea1f53f74a0e4e --backend=rust 2>&1); then
+  echo "FAIL: cascadeParkNever unexpectedly HELD on mc_chuggy_budgeted —" >&2
+  echo "      no reachable revoke ever cascade-parks a dependent (cascadeSafety may be vacuous)" >&2
+  exit 1
+fi
+echo "$park_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_chuggy_budgeted cascade probe failed for a reason other than the expected violation:" >&2
+  echo "$park_out" | tail -5 >&2
+  exit 1
+}
+echo "$park_out" | grep -q 'job-revoked' && echo "$park_out" | grep -q 'RsDependencyRevoked' || {
+  echo "FAIL: cascadeParkNever violation trace lacks the revoke-then-park signature" >&2
+  exit 1
+}
+echo "Cascade reproduced: a reachable revoke atomically parks a dependent behind the"
+echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the PR 2 gate)."
 
 echo
 echo "=== All checks passed ==="

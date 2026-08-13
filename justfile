@@ -85,9 +85,16 @@ itf-golden:
 # landingIsolation/quietRepoLandsCleanly/reposWellFormed) and adds the
 # fifth deterministic witness module (quiet-clean landing, moved rework +
 # wall attributed, cross-repo dep unblock).
-# This is check.sh Stage 9 + 9b-DET minus 9b-RND, the DEMOTED random
-# pinned-seed probes (warn-only trace-space health, bash logic) — run
-# `just check` for the full gate.
+# The REFINEMENT PR (roadmap PR 6 — the journaled actor, charter §4
+# resolved: service + dumb K8s Jobs) adds specs/chuggy/refinement.qnt
+# (the domain instance embedded as the actor's memory + the durable
+# decision journal, executor cursor, and crash model; two step
+# relations — rstep is journal-then-effect, rstepHazard adds the
+# effect-first crash seam) with its unit/witness/hazard test modules and
+# the two instance runs at the end of this recipe.
+# This is check.sh Stage 9 + 9b-DET + 10a/10b minus the random
+# pinned-seed probes (9b-RND and 10c: warn-only trace-space health, bash
+# logic) — run `just check` for the full gate.
 chuggy:
     npx quint typecheck specs/chuggy/measure.qnt
     npx quint typecheck specs/chuggy/domain.qnt
@@ -107,6 +114,13 @@ chuggy:
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint typecheck specs/chuggy/refinement.qnt
+    npx quint typecheck specs/chuggy/tests/chuggy_refinement_test.qnt
+    npx quint test --main=chuggy_refinement_unit_test specs/chuggy/tests/chuggy_refinement_test.qnt
+    npx quint test --main=chuggy_refinement_witness_test specs/chuggy/tests/chuggy_refinement_test.qnt
+    npx quint test --main=chuggy_refinement_hazard_test specs/chuggy/tests/chuggy_refinement_test.qnt
+    npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement --init=rinit --step=rstep --invariant='allInvariants and refinementInvariants' --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement --init=rinit --step=rstepHazard --invariant='allInvariants and refinementCore' --max-samples=2000 --max-steps=40
 
 # Full check pipeline (what CI runs), Stages 1-9.
 check:

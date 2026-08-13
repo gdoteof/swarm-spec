@@ -17,9 +17,8 @@
 ///   - both retry-metering branches (charter §2 op-retry row).
 ///
 /// PR 2 additions (authoring lifecycle; gate: revoke cascades proved safe):
-///   - arrival/freeze/release strictly descend where the descent table
-///     says, and the AUTHORING climbers (arrival, unfreeze) are pinned as
-///     climbers;
+///   - arrival/release strictly descend where the descent table says, and
+///     the AUTHORING climber (arrival) is pinned as a climber;
 ///   - revoke from EVERY phase the v1 table permits (table.qnt lines
 ///     47-48), with the desk-only flat cases pinned, and revocableIn false
 ///     exactly on the absorbing terminals (lines 45-46);
@@ -54,24 +53,42 @@
 ///     both;
 ///   - validPrograms IS the arrival-refusal rule: the ill-formed programs
 ///     are not in it.
+///
+/// NOTES-RECONCILIATION PR additions/reworks (docs/chuggy-notes-triage.md):
+///   - release goes Draft -> Pending directly; the freeze/unfreeze tests
+///     died with the Frozen phase (the deliberate table-line deviation,
+///     recorded at decideRelease);
+///   - the revalidation park lands on PEscalated with reason + RPending
+///     resume, and its operator resume — the old stalled-retry, now a
+///     decideOpRetry flavor — is pinned FREE (both meterings) and CHURN;
+///   - the dependency_revoked wall is pinned resume-less (retryableIn
+///     false at any gas) — its only exit is revoke;
+///   - the revoke suite covers all THREE desk-reason flavors of the one
+///     parked phase (post-work wall, pre-work revalidation, cascade wall);
+///   - gas rename throughout (gasLeft, gas_exhausted, RsGasExhausted,
+///     GAS; gasRequiredTest is the charter's required-deadline row);
+///   - REWORK_POLICY = RWBudget(n) instantiates the rework policy;
+///   - the task lifecycle is the explicit TaskState sum: every PR 3 test
+///     survived with MECHANICAL updates only (wt/et build resolved states,
+///     wr/er build running ones) — the machine-behavior evidence that the
+///     notes' "task state machine" row changed structure, not behavior.
 module chuggy_test {
   import chuggy_measure.* from "../measure"
 
   // Reference instance: Budgeted(1) gate pricing, charged retries (the
   // charter defaults where the charter names a default). PR 3: programs up
-  // to 2 stages; the EVAL_COMBINATOR const is gone — combinators are data
-  // on each job's program (the DA instance PR 1-2 used for CAnyPass
-  // machine coverage is gone with it: program-as-data tests below get both
-  // combinators from ONE instance, which is the point).
+  // to 2 stages — combinators are data on each job's program, so the
+  // program-as-data tests below get both combinators from ONE instance
+  // (which is the point).
   import chuggy_domain(
-    N_JOBS = 2, N_TASKS = 2, REWORK_BUDGET = 1, DEADLINE = 3,
+    N_JOBS = 2, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2
   ) as DB from "../domain"
 
   // DeadlineOnly gate pricing (the other §2 branch).
   import chuggy_domain(
-    N_JOBS = 1, N_TASKS = 2, REWORK_BUDGET = 1, DEADLINE = 3,
+    N_JOBS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = DeadlineOnly, OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2
   ) as DD from "../domain"
@@ -79,36 +96,45 @@ module chuggy_test {
   // Free retry metering — v1's model-status §5b churn, kept reproducible
   // by configuration (machine-level coverage: mc_chuggy_retryfree).
   import chuggy_domain(
-    N_JOBS = 1, N_TASKS = 2, REWORK_BUDGET = 1, DEADLINE = 3,
+    N_JOBS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2
   ) as DF from "../domain"
 
-  // A graph WITHOUT a deadline — invalid by charter §2 (economy/deadline).
+  // A GASLESS graph — invalid by charter §2 (economy/deadline; the
+  // account is named gas since the notes PR, the requirement unchanged).
   import chuggy_domain(
-    N_JOBS = 1, N_TASKS = 2, REWORK_BUDGET = 1, DEADLINE = 0,
+    N_JOBS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2
   ) as DZ from "../domain"
 
-  /// Charter §2, deadline row: a graph without a deadline is INVALID — the
-  /// model admits no initial state for it at all.
-  run deadlineRequiredTest = DZ::init.fail()
+  /// Charter §2, economy/deadline row under its honest name: a gasless
+  /// graph is INVALID — the model admits no initial state for it at all.
+  run gasRequiredTest = DZ::init.fail()
 
   // The same bounds the instances above carry, for measure recomputation.
   pure val bB: Bounds =
-    { reworkBudget: 1, nTasks: 2, maxStages: 2, gatePricing: Budgeted(1) }
+    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, gatePricing: Budgeted(1) }
   pure val bD: Bounds =
-    { reworkBudget: 1, nTasks: 2, maxStages: 2, gatePricing: DeadlineOnly }
+    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, gatePricing: DeadlineOnly }
 
   pure def mB(c: Core): int = sysMeasure(bB, c.jobs)
   pure def mD(c: Core): int = sysMeasure(bD, c.jobs)
 
-  // Task-record literals, kept terse: wt = work task, et = eval-stage task.
+  // Task-record literals, kept terse: wt/et build RESOLVED work and
+  // eval-stage tasks (the record's vocabulary — TSResolved carries the
+  // outcome), wr/er build RUNNING ones (the live set's). The split IS the
+  // notes PR's explicit lifecycle showing up in the test vocabulary; every
+  // pre-existing test needed only this mechanical rewrap.
   pure def wt(i: int, o: TaskOutcome): Task =
-    { id: i, kind: TKWork, outcome: o }
+    { id: i, kind: TKWork, state: TSResolved(o) }
   pure def et(i: int, s: int, o: TaskOutcome): Task =
-    { id: i, kind: TKEval(s), outcome: o }
+    { id: i, kind: TKEval(s), state: TSResolved(o) }
+  pure def wr(i: int): Task =
+    { id: i, kind: TKWork, state: TSRunning }
+  pure def er(i: int, s: int): Task =
+    { id: i, kind: TKEval(s), state: TSRunning }
 
   // Programs used throughout. progU2 is exactly DB::defaultProgram (the
   // charter's unanimous single-stage default — the PR 1-2 compatibility
@@ -144,20 +170,19 @@ module chuggy_test {
 
   // === The happy path, decision by decision ================================
   // PR 2: the path STARTS at authoring — the fleet is empty, job 1 arrives
-  // as a Draft (freshJob seam), is frozen, and released; job 2 arrives as
-  // a Draft depending on 1 and stays unreleased throughout. PR 3: job 1
-  // carries the DEFAULT program, and its task ids run 1..4 across the
-  // whole history (work 1,2 then eval-stage-0 3,4 — sequential within the
-  // job, chuggernaut spec.md §1.2).
+  // as a Draft (freshJob seam) and is released (notes PR: Draft -> Pending
+  // directly, no freeze step exists any more); job 2 arrives as a Draft
+  // depending on 1 and stays unreleased throughout. PR 3: job 1 carries
+  // the DEFAULT program, and its task ids run 1..4 across the whole
+  // history (work 1,2 then eval-stage-0 3,4 — sequential within the job,
+  // chuggernaut spec.md §1.2).
 
   pure val cEmpty: Core = { jobs: Map() }
   pure val dArr1 = DB::decideArrive(cEmpty, Set(), DB::defaultProgram)
   pure val cA1 = dArr1.post                        // job 1: Draft
   pure val dArr2 = DB::decideArrive(cA1, Set(1), DB::defaultProgram)
   pure val cA2 = dArr2.post                        // job 2: Draft, dep {1}
-  pure val dFreeze = DB::decideFreeze(cA2, 1)
-  pure val cFroz = dFreeze.post                    // job 1: Frozen
-  pure val dRelease = DB::decideRelease(cFroz, 1)
+  pure val dRelease = DB::decideRelease(cA2, 1)
 
   pure val c0: Core = dRelease.post                // job 1: Pending, job 2: Draft
   pure val dDispatch = DB::decideDispatch(c0, 1)   // spawns TKWork ids 1,2
@@ -220,7 +245,7 @@ module chuggy_test {
     // Intermediate shape: after the work reduce the work set is already
     // retired and the eval stage is live above it.
     c4.jobs.get(1).record == [wt(1, TPassed), wt(2, TPassed)],
-    c4.jobs.get(1).tasks == Set(et(3, 0, TRunning), et(4, 0, TRunning))
+    c4.jobs.get(1).tasks == Set(er(3, 0), er(4, 0))
   })
 
   /// IDENTITY ACCOUNTING (PR 3 defense-in-depth, domain.qnt idsAccounted):
@@ -314,7 +339,7 @@ module chuggy_test {
   /// PR 3: the failed set is RETIRED, outcomes intact — the record shows
   /// WHICH task failed, provenance the desk can read.
   pure val cWorkFail: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PWorking, deadlineLeft: 2, tasks: oneFailedW }) }
+    phase: PWorking, gasLeft: 2, tasks: oneFailedW }) }
   pure val dWorkFail = DB::decideWorkReduce(cWorkFail, 1)
 
   run workFailedWallTest = assert(and {
@@ -339,29 +364,29 @@ module chuggy_test {
   /// measure) descend. TFailed here also covers evaluator-infra death —
   /// the job pays, one account (charter §2 eval/evaluator-failure).
   pure val cEvalFail: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PEvaluating, reworkLeft: 1, deadlineLeft: 2, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dEvalRework = DB::decideEvalStageReduce(cEvalFail, 1)
 
   run evalReworkDescendsTest = assert(and {
     dEvalRework.rec.label == "rework-started eval_failure",
     dEvalRework.post.jobs.get(1).phase == PWorking,
     dEvalRework.post.jobs.get(1).reworkLeft == 0,
-    dEvalRework.post.jobs.get(1).deadlineLeft == 1,
+    dEvalRework.post.jobs.get(1).gasLeft == 1,
     // The failed stage is retired; the rework cycle's work set spawns at
     // the NEXT ids (3,4) — new records, not overwrites.
     dEvalRework.post.jobs.get(1).record == [et(1, 0, TFailed), et(2, 0, TPassed)],
-    dEvalRework.post.jobs.get(1).tasks == Set(wt(3, TRunning), wt(4, TRunning)),
+    dEvalRework.post.jobs.get(1).tasks == Set(wr(3), wr(4)),
     mB(dEvalRework.post) < mB(cEvalFail)
   })
 
-  /// Budget wall (checked before the deadline wall, v1 convention).
+  /// Budget wall (checked before the gas wall, v1 convention).
   pure val cReworkWall: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PEvaluating, reworkLeft: 0, deadlineLeft: 2, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
 
   /// Deadline wall: budget remains but the gas is gone.
   pure val cEvalGasWall: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PEvaluating, reworkLeft: 1, deadlineLeft: 0, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 1, gasLeft: 0, tasks: oneFailedE0 }) }
   pure val dEvalGasWall = DB::decideEvalStageReduce(cEvalGasWall, 1)
 
   run evalWallsNamedTest = assert(and {
@@ -369,8 +394,8 @@ module chuggy_test {
     dReworkWall.post.jobs.get(1).reason == RsReworkBudgetExhausted,
     dReworkWall.post.jobs.get(1).resumeAt == REvaluating,
     mB(dReworkWall.post) < mB(cReworkWall),
-    dEvalGasWall.rec.label == "job-escalated job_deadline_exceeded",
-    dEvalGasWall.post.jobs.get(1).reason == RsDeadlineExceeded,
+    dEvalGasWall.rec.label == "job-escalated gas_exhausted",
+    dEvalGasWall.post.jobs.get(1).reason == RsGasExhausted,
     mB(dEvalGasWall.post) < mB(cEvalGasWall)
   })
 
@@ -385,7 +410,7 @@ module chuggy_test {
   pure def allPassedW: Set[Task] = Set(wt(1, TPassed), wt(2, TPassed))
 
   pure val cStagedWork: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progStaged),
-    phase: PWorking, deadlineLeft: 2, tasks: allPassedW }) }
+    phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
   // Work passes -> spawn the LOWEST stage: fan-out 1, id 3.
   pure val dToEval = DB::decideWorkReduce(cStagedWork, 1)
   pure val cS0 = dToEval.post
@@ -410,11 +435,11 @@ module chuggy_test {
     dAdvance.rec.transitions == [{ job: 1, from: PEvaluating, to: PEvaluating }],
     dAdvance.rec.effects == ["SpawnEvalTasks"],
     cS1.jobs.get(1).phase == PEvaluating,
-    cS1.jobs.get(1).tasks == Set(et(4, 1, TRunning), et(5, 1, TRunning)),
+    cS1.jobs.get(1).tasks == Set(er(4, 1), er(5, 1)),
     cS1.jobs.get(1).record == [wt(1, TPassed), wt(2, TPassed), et(3, 0, TPassed)],
     // No account moved: stage progress is priced by the measure digit, not
     // by gas or budget.
-    cS1.jobs.get(1).deadlineLeft == 2,
+    cS1.jobs.get(1).gasLeft == 2,
     cS1.jobs.get(1).reworkLeft == 1,
     mB(cS1) < mB(dS0Done.post)
   })
@@ -448,14 +473,14 @@ module chuggy_test {
     dShort.rec.label == "rework-started eval_failure",
     dShort.rec.transitions == [{ job: 1, from: PEvaluating, to: PWorking }],
     cAfterShort.jobs.get(1).reworkLeft == 0,       // paid 1 rework
-    cAfterShort.jobs.get(1).deadlineLeft == 1,     // paid 1 gas
+    cAfterShort.jobs.get(1).gasLeft == 1,     // paid 1 gas
     cAfterShort.jobs.get(1).gateLeft == 1,         // gate untouched
     // "no task records exist for them": stage 1 never spawned.
     cAfterShort.jobs.get(1).record ==
       [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)],
     cAfterShort.jobs.get(1).record.indices().forall(i =>
       cAfterShort.jobs.get(1).record[i].kind != TKEval(1)),
-    cAfterShort.jobs.get(1).tasks == Set(wt(4, TRunning), wt(5, TRunning)),
+    cAfterShort.jobs.get(1).tasks == Set(wr(4), wr(5)),
     mB(cAfterShort) < mB(dS0Fail.post)
   })
 
@@ -469,7 +494,7 @@ module chuggy_test {
 
   run reworkRestartsLowestStageTest = assert(and {
     dBackToEval.rec.label == "work-passed",
-    dBackToEval.post.jobs.get(1).tasks == Set(et(6, 0, TRunning)),
+    dBackToEval.post.jobs.get(1).tasks == Set(er(6, 0)),
     dBackToEval.post.jobs.get(1).record ==
       [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed),
        wt(4, TPassed), wt(5, TPassed)]
@@ -477,11 +502,11 @@ module chuggy_test {
 
   /// The golden fixture's exact shape (staged_eval_short_circuit.yaml:
   /// "staged eval: stage-0 fails -> stage 1 never launched -> escalate",
-  /// REWORK_BUDGET = 0 there): the same short-circuit against an empty
+  /// REWORK_POLICY = RWBudget(0) there): the same short-circuit against an empty
   /// rework account hits the EXISTING wall — stage 1 remains unlaunched,
   /// no new wall, no new account.
   pure val cStagedNoBudget: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progStaged),
-    phase: PEvaluating, reworkLeft: 0, deadlineLeft: 2,
+    phase: PEvaluating, reworkLeft: 0, gasLeft: 2,
     record: [wt(1, TPassed), wt(2, TPassed)],
     tasks: Set(et(3, 0, TFailed)) }) }
   pure val dStagedWall = DB::decideEvalStageReduce(cStagedNoBudget, 1)
@@ -509,7 +534,7 @@ module chuggy_test {
     // dShort IS the crash case read as infra death: same TFailed, same
     // decision. Pin the account deltas as the claim.
     cStagedWork.jobs.get(1).reworkLeft - cAfterShort.jobs.get(1).reworkLeft == 1,
-    cStagedWork.jobs.get(1).deadlineLeft - cAfterShort.jobs.get(1).deadlineLeft == 1,
+    cStagedWork.jobs.get(1).gasLeft - cAfterShort.jobs.get(1).gasLeft == 1,
     cStagedWork.jobs.get(1).gateLeft == cAfterShort.jobs.get(1).gateLeft
   })
 
@@ -525,23 +550,23 @@ module chuggy_test {
   // === PROGRAM-AS-DATA at machine level (the PR 1 lesson generalized) ======
   // ONE machine instance (DB), two jobs identical but for the program on
   // their record: different decisions. PR 1-2 needed a separate machine
-  // instantiation (EVAL_COMBINATOR) to show this; the program made it what
-  // the charter said it is — data.
+  // instantiation (a machine-wide combinator parameter) to show this; the
+  // program made it what the charter said it is — data.
 
   pure val mixedE0: Set[Task] = Set(et(1, 0, TPassed), et(2, 0, TFailed))
   pure val allFailedE0: Set[Task] = Set(et(1, 0, TFailed), et(2, 0, TFailed))
 
   pure val cMixedAny: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progA2),
-    phase: PEvaluating, tasks: mixedE0, deadlineLeft: 2 }) }
+    phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
   pure val cMixedUna: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PEvaluating, tasks: mixedE0, deadlineLeft: 2 }) }
+    phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
 
   run programAsDataCombinatorTest = assert(and {
     DB::decideEvalStageReduce(cMixedAny, 1).rec.label == "eval-passed",
     DB::decideEvalStageReduce(cMixedAny, 1).post.jobs.get(1).phase == PLanding,
     DB::decideEvalStageReduce(cMixedUna, 1).rec.label == "rework-started eval_failure",
     DB::decideEvalStageReduce(cMixedUna, 1).post.jobs.get(1).phase == PWorking,
-    DB::decideEvalStageReduce(cMixedUna, 1).post.jobs.get(1).deadlineLeft == 1
+    DB::decideEvalStageReduce(cMixedUna, 1).post.jobs.get(1).gasLeft == 1
   })
 
   /// Program STRUCTURE is data too: the same passed work set spawns a
@@ -549,13 +574,13 @@ module chuggy_test {
   /// under the staged program — the machine's very next task anatomy is
   /// decided by the program on the record.
   pure val cFlatWork: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PWorking, deadlineLeft: 2, tasks: allPassedW }) }
+    phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
 
   run programAsDataStructureTest = assert(and {
     DB::decideWorkReduce(cFlatWork, 1).post.jobs.get(1).tasks ==
-      Set(et(3, 0, TRunning), et(4, 0, TRunning)),
+      Set(er(3, 0), er(4, 0)),
     DB::decideWorkReduce(cStagedWork, 1).post.jobs.get(1).tasks ==
-      Set(et(3, 0, TRunning))
+      Set(er(3, 0))
   })
 
   /// Both branches of the combinator vocabulary are semantically distinct
@@ -570,7 +595,7 @@ module chuggy_test {
   /// All-failed still walls under CAnyPass (a program is not "always
   /// pass"): the rework path is taken.
   pure val cFailAny: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progA2),
-    phase: PEvaluating, tasks: allFailedE0, deadlineLeft: 2 }) }
+    phase: PEvaluating, tasks: allFailedE0, gasLeft: 2 }) }
 
   run anyPassNotAlwaysPassTest = assert(
     DB::decideEvalStageReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
@@ -579,27 +604,27 @@ module chuggy_test {
 
   /// Budgeted branch: a landing failure spends 1 gate budget AND 1 gas.
   pure val cGateB: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PLanding, gateLeft: 1, deadlineLeft: 2 }) }
+    phase: PLanding, gateLeft: 1, gasLeft: 2 }) }
   pure val dGateRework = DB::decideLand(cGateB, 1, LandFailed)
 
   run gateReworkBudgetedDescendsTest = assert(and {
     dGateRework.rec.label == "rework-started gate_failure",
     dGateRework.post.jobs.get(1).phase == PWorking,
     dGateRework.post.jobs.get(1).gateLeft == 0,
-    dGateRework.post.jobs.get(1).deadlineLeft == 1,
+    dGateRework.post.jobs.get(1).gasLeft == 1,
     // PR 3: the gate rework's work set is a fresh incarnation at fresh ids.
-    dGateRework.post.jobs.get(1).tasks == Set(wt(1, TRunning), wt(2, TRunning)),
+    dGateRework.post.jobs.get(1).tasks == Set(wr(1), wr(2)),
     mB(dGateRework.post) < mB(cGateB)
   })
 
   /// The gate-budget wall — a reason that EXISTS ONLY under Budgeted.
   pure val cGateWall: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PLanding, gateLeft: 0, deadlineLeft: 2 }) }
+    phase: PLanding, gateLeft: 0, gasLeft: 2 }) }
   pure val dGateWall = DB::decideLand(cGateWall, 1, LandFailed)
 
-  /// Budgeted branch, deadline wall: gate budget remains, gas is gone.
+  /// Budgeted branch, gas wall: gate budget remains, gas is gone.
   pure val cGateGasWall: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2),
-    phase: PLanding, gateLeft: 1, deadlineLeft: 0 }) }
+    phase: PLanding, gateLeft: 1, gasLeft: 0 }) }
   pure val dGateGasWall = DB::decideLand(cGateGasWall, 1, LandFailed)
 
   run gateWallsNamedTest = assert(and {
@@ -607,81 +632,111 @@ module chuggy_test {
     dGateWall.post.jobs.get(1).reason == RsGateBudgetExhausted,
     dGateWall.post.jobs.get(1).resumeAt == RLanding,
     mB(dGateWall.post) < mB(cGateWall),
-    dGateGasWall.rec.label == "job-escalated job_deadline_exceeded",
-    dGateGasWall.post.jobs.get(1).reason == RsDeadlineExceeded,
+    dGateGasWall.rec.label == "job-escalated gas_exhausted",
+    dGateGasWall.post.jobs.get(1).reason == RsGasExhausted,
     mB(dGateGasWall.post) < mB(cGateGasWall)
   })
 
   /// DeadlineOnly branch: a landing failure spends gas alone (v1's shape;
-  /// the required deadline is the only meter), and the gate-budget wall
+  /// the required gas account is the only meter), and the gate-budget wall
   /// can never be the reason.
   pure val cGateD: Core = { jobs: Map(1 -> { ...DD::freshJob(Set(), progU2),
-    phase: PLanding, deadlineLeft: 2 }) }
+    phase: PLanding, gasLeft: 2 }) }
   pure val dGateD = DD::decideLand(cGateD, 1, LandFailed)
 
   pure val cGateDWall: Core = { jobs: Map(1 -> { ...DD::freshJob(Set(), progU2),
-    phase: PLanding, deadlineLeft: 0 }) }
+    phase: PLanding, gasLeft: 0 }) }
   pure val dGateDWall = DD::decideLand(cGateDWall, 1, LandFailed)
 
   run gateReworkDeadlineOnlyTest = assert(and {
     dGateD.rec.label == "rework-started gate_failure",
     dGateD.post.jobs.get(1).phase == PWorking,
     dGateD.post.jobs.get(1).gateLeft == 0,      // no gate account to spend
-    dGateD.post.jobs.get(1).deadlineLeft == 1,
+    dGateD.post.jobs.get(1).gasLeft == 1,
     mD(dGateD.post) < mD(cGateD),
-    dGateDWall.rec.label == "job-escalated job_deadline_exceeded",
-    dGateDWall.post.jobs.get(1).reason == RsDeadlineExceeded,
+    dGateDWall.rec.label == "job-escalated gas_exhausted",
+    dGateDWall.post.jobs.get(1).reason == RsGasExhausted,
     mD(dGateDWall.post) < mD(cGateDWall)
   })
 
-  // === The human desk: stall, retries, and the metering parameter ==========
+  // === The human desk: parks, retries, and the metering parameter ==========
 
-  /// Pre-work invalidation parks the job (rank 4 -> 0: descends, free) …
+  /// Pre-work invalidation parks the job (rank 4 -> 0: descends, free) on
+  /// PEscalated — the notes PR's one parked phase — with the pre-work
+  /// wall's reason AND resume point (RPending: back to Pending, never to a
+  /// pipeline phase, because nothing pipeline ever ran) …
   /// (PR 2: freshJob births a Draft, so the RELEASED fixture overrides
   /// the phase — revalFail is a Ready-phase edge.)
   pure val cFresh: Core = { jobs: Map(1 -> { ...DB::freshJob(Set(), progU2), phase: PPending }) }
-  pure val dStall = DB::decideRevalFail(cFresh, 1)
+  pure val dPark = DB::decideRevalFail(cFresh, 1)
 
-  /// … and the operator's stalled-retry is the CHURN set's canonical
-  /// member: the measure CLIMBS (nothing was spent, nothing is charged) —
-  /// pinned here so the descent claim's exemption list stays honest.
-  pure val dStallRetry = DB::decideStalledRetry(dStall.post, 1)
+  /// … and its operator resume — the old stalled-retry, now decideOpRetry's
+  /// RPending flavor (the notes triage's resume-flavor row) — is the CHURN
+  /// set's canonical member: the measure CLIMBS and NOTHING is charged
+  /// (nothing was ever spent; the pricing survived the merge) — pinned
+  /// here so the descent claim's exemption list stays honest.
+  pure val dParkResume = DB::decideOpRetry(dPark.post, 1)
 
-  run stallAndRetryClassifiedTest = assert(and {
-    dStall.rec.label == "job-stalled revalidation_failed",
-    dStall.post.jobs.get(1).phase == PStalled,
-    dStall.post.jobs.get(1).reason == RsRevalidationFailed,
-    hasOpenHumanTask(dStall.post.jobs.get(1)),     // derived, not stored
-    mB(dStall.post) < mB(cFresh),
-    dStallRetry.rec.label == "stalled-retry",
-    dStallRetry.post.jobs.get(1).phase == PPending,
-    dStallRetry.post.jobs.get(1).reason == RsNone,
-    not(hasOpenHumanTask(dStallRetry.post.jobs.get(1))),
-    mB(dStallRetry.post) > mB(dStall.post)  // CHURN: climbs, by design
+  run preWorkParkAndResumeClassifiedTest = assert(and {
+    dPark.rec.label == "job-escalated revalidation_failed",
+    dPark.rec.effects == ["OpenHumanTask"],
+    dPark.post.jobs.get(1).phase == PEscalated,
+    dPark.post.jobs.get(1).reason == RsRevalidationFailed,
+    dPark.post.jobs.get(1).resumeAt == RPending,
+    hasOpenHumanTask(dPark.post.jobs.get(1)),     // derived, not stored
+    mB(dPark.post) < mB(cFresh),
+    dParkResume.rec.label == "operator-retry",
+    dParkResume.rec.transitions == [{ job: 1, from: PEscalated, to: PPending }],
+    dParkResume.post.jobs.get(1).phase == PPending,
+    dParkResume.post.jobs.get(1).reason == RsNone,
+    dParkResume.post.jobs.get(1).resumeAt == RNone,
+    dParkResume.post.jobs.get(1).gasLeft == dPark.post.jobs.get(1).gasLeft, // FREE
+    not(hasOpenHumanTask(dParkResume.post.jobs.get(1))),
+    mB(dParkResume.post) > mB(dPark.post)  // CHURN: climbs, by design
   })
 
-  /// Charged retry metering (the charter default): EVERY resume pays 1 gas,
-  /// so operator retries descend the measure — v1's §5b livelock priced
-  /// away.
+  /// The pre-work resume's pricing, pinned at the boundary: FREE under
+  /// BOTH meterings — retryable even at ZERO gas (charged instance DB and
+  /// free instance DF alike), where every charging flavor is not
+  /// (opRetryChargedDescendsTest's fixtures need gas). This is the "still
+  /// free?" question in the triage's resume-flavor row answered with a
+  /// machine check: yes, because nothing was ever spent, and the Working
+  /// boundary still meters any actual re-entry (standing rule 2).
+  pure val cParkNoGas: Core =
+    { jobs: Map(1 -> { ...dPark.post.jobs.get(1), gasLeft: 0 }) }
+  run preWorkResumeFreeAtZeroGasTest = assert(and {
+    DB::retryableIn(cParkNoGas, 1),
+    DF::retryableIn(cParkNoGas, 1),
+    DB::decideOpRetry(cParkNoGas, 1).post.jobs.get(1).phase == PPending,
+    DB::decideOpRetry(cParkNoGas, 1).post.jobs.get(1).gasLeft == 0,
+    // Contrast: a CHARGING resume at zero gas is not retryable (the
+    // permanently-parked corner).
+    not(DB::retryableIn({ jobs: Map(1 -> { ...escLanding, gasLeft: 0 }) }, 1))
+  })
+
+  /// Charged retry metering (the charter default): every PIPELINE resume
+  /// pays 1 gas, so those retries descend the measure — v1's §5b livelock
+  /// priced away. (The pre-work RPending flavor stays free either way —
+  /// pinned above.)
   pure val escLanding: Job = { ...DB::freshJob(Set(), progU2),
-    phase: PEscalated, resumeAt: RLanding, reason: RsDeadlineExceeded,
-    deadlineLeft: 2 }
+    phase: PEscalated, resumeAt: RLanding, reason: RsGasExhausted,
+    gasLeft: 2 }
   pure val cEscB: Core = { jobs: Map(1 -> escLanding) }
   pure val dRetryCharged = DB::decideOpRetry(cEscB, 1)
 
   pure val escWorking: Job = { ...DB::freshJob(Set(), progU2),
     phase: PEscalated, resumeAt: RWorking, reason: RsWorkFailed,
-    deadlineLeft: 2 }
+    gasLeft: 2 }
   pure val dRetryChargedWork = DB::decideOpRetry({ jobs: Map(1 -> escWorking) }, 1)
 
   run opRetryChargedDescendsTest = assert(and {
     dRetryCharged.rec.label == "operator-retry",
     dRetryCharged.post.jobs.get(1).phase == PLanding,
-    dRetryCharged.post.jobs.get(1).deadlineLeft == 1,   // charged
+    dRetryCharged.post.jobs.get(1).gasLeft == 1,   // charged
     not(hasOpenHumanTask(dRetryCharged.post.jobs.get(1))),
     mB(dRetryCharged.post) < mB(cEscB),
     dRetryChargedWork.post.jobs.get(1).phase == PWorking,
-    dRetryChargedWork.post.jobs.get(1).deadlineLeft == 1,
+    dRetryChargedWork.post.jobs.get(1).gasLeft == 1,
     mB(dRetryChargedWork.post) < mB({ jobs: Map(1 -> escWorking) })
   })
 
@@ -692,7 +747,7 @@ module chuggy_test {
   /// record.
   pure val escEval: Job = { ...DB::freshJob(Set(), progStaged),
     phase: PEscalated, resumeAt: REvaluating, reason: RsReworkBudgetExhausted,
-    deadlineLeft: 2, reworkLeft: 0,
+    gasLeft: 2, reworkLeft: 0,
     record: [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)] }
   pure val dRetryEval = DB::decideOpRetry({ jobs: Map(1 -> escEval) }, 1)
 
@@ -700,9 +755,9 @@ module chuggy_test {
     dRetryEval.rec.label == "operator-retry",
     dRetryEval.rec.effects == ["SpawnEvalTasks"],
     dRetryEval.post.jobs.get(1).phase == PEvaluating,
-    dRetryEval.post.jobs.get(1).deadlineLeft == 1,   // charged
+    dRetryEval.post.jobs.get(1).gasLeft == 1,   // charged
     // Lowest stage, fresh id 4; the retired stage-0 failure stays on record.
-    dRetryEval.post.jobs.get(1).tasks == Set(et(4, 0, TRunning)),
+    dRetryEval.post.jobs.get(1).tasks == Set(er(4, 0)),
     dRetryEval.post.jobs.get(1).record ==
       [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)],
     mB(dRetryEval.post) < mB({ jobs: Map(1 -> escEval) })
@@ -718,9 +773,9 @@ module chuggy_test {
 
   run opRetryFreeClassifiedTest = assert(and {
     dRetryFree.post.jobs.get(1).phase == PLanding,
-    dRetryFree.post.jobs.get(1).deadlineLeft == 2,      // NOT charged
+    dRetryFree.post.jobs.get(1).gasLeft == 2,      // NOT charged
     mB(dRetryFree.post) > mB(cEscF),                    // CHURN: climbs
-    dRetryFreeWork.post.jobs.get(1).deadlineLeft == 1,  // Working resume pays
+    dRetryFreeWork.post.jobs.get(1).gasLeft == 1,  // Working resume pays
     mB(dRetryFreeWork.post) < mB({ jobs: Map(1 -> escWorking) })
   })
 
@@ -740,7 +795,7 @@ module chuggy_test {
     dArr1.rec.effects == ["CreateDraft"],
     cA1.jobs.keys() == Set(1),
     cA1.jobs.get(1).phase == PDraft,
-    cA1.jobs.get(1).deadlineLeft == 3,     // full grant, nothing spent
+    cA1.jobs.get(1).gasLeft == 3,     // full grant, nothing spent
     cA1.jobs.get(1).reworkLeft == 1,
     cA1.jobs.get(1).gateLeft == 1,
     cA1.jobs.get(1).program == DB::defaultProgram,  // PR 3: eval is data, authored
@@ -751,53 +806,37 @@ module chuggy_test {
     mB(cA2) > mB(cA1)
   })
 
-  /// Freeze and release strictly descend (freeze 6->5, release 5->4 — the
-  /// descent-table rows for table.qnt lines 22 and 25-26), golden-trace
-  /// shaped.
-  run freezeReleaseDescendTest = assert(and {
-    dFreeze.rec.label == "job-frozen",
-    dFreeze.rec.transitions == [{ job: 1, from: PDraft, to: PFrozen }],
-    mB(cFroz) < mB(cA2),
+  /// Release strictly descends (Draft -> Pending, rank 5 -> 4 — the
+  /// descent-table row for table.qnt line 21), golden-trace shaped, and
+  /// the derived waiting room splits it correctly on landing. Notes PR:
+  /// there is no freeze/unfreeze pair to test any more — "Frozen removed.
+  /// Draft -> Ready/Blocked" (the deliberate deviation recorded at
+  /// decideRelease) — so release is authoring's only phase edge after
+  /// arrival, and arrival is the AUTHORING set's only climber (pinned in
+  /// arrivalTest).
+  run releaseDescendsTest = assert(and {
     dRelease.rec.label == "job-released",
-    dRelease.rec.transitions == [{ job: 1, from: PFrozen, to: PPending }],
-    mB(c0) < mB(cFroz)
-  })
-
-  /// The v1 table also releases straight from Draft (line 21: `(Draft,
-  /// Ready | Blocked | ...)`) — no freeze required; descends 6->4.
-  run directReleaseFromDraftTest = assert(and {
-    DB::decideRelease(cA1, 1).rec.transitions ==
-      [{ job: 1, from: PDraft, to: PPending }],
-    mB(DB::decideRelease(cA1, 1).post) < mB(cA1),
-    DB::isReadyIn(DB::decideRelease(cA1, 1).post, 1)   // no deps: Ready derives
-  })
-
-  /// Unfreeze (table line 24, the edit loop) CLIMBS — the AUTHORING churn
-  /// member that makes per-job liveness conditional on authors eventually
-  /// releasing or revoking (measure.qnt header), pinned exactly like
-  /// stalled-retry and the RetryFree resumes.
-  run unfreezeClimbsTest = assert(and {
-    DB::decideUnfreeze(cFroz, 1).rec.label == "job-unfrozen",
-    DB::decideUnfreeze(cFroz, 1).rec.transitions ==
-      [{ job: 1, from: PFrozen, to: PDraft }],
-    mB(DB::decideUnfreeze(cFroz, 1).post) > mB(cFroz)
+    dRelease.rec.transitions == [{ job: 1, from: PDraft, to: PPending }],
+    mB(c0) < mB(cA2),
+    DB::isReadyIn(c0, 1)                 // no deps: Ready derives
   })
 
   /// A dependency on an UNRELEASED job blocks: release job 2 while its dep
-  /// (job 1) is still Draft — Blocked derives; freezing the dep changes
-  /// nothing (Frozen is not Done either). Positive control: once the dep
-  /// is Done (c8), releasing job 2 derives Ready.
+  /// (job 1) is still Draft — Blocked derives. Positive control: once the
+  /// dep is Done (c8), releasing job 2 derives Ready.
   pure val cRel2: Core = DB::decideRelease(cA2, 2).post   // 2 Pending, dep 1 Draft
   run unreleasedDepBlocksTest = assert(and {
     DB::isBlockedIn(cRel2, 2),
     not(DB::isReadyIn(cRel2, 2)),
-    DB::isBlockedIn(DB::decideFreeze(cRel2, 1).post, 2),  // Frozen dep: still blocked
     DB::isReadyIn(DB::decideRelease(c8, 2).post, 2)       // Done dep: Ready
   })
 
   // === Revoke, from every phase the v1 table permits =======================
   // Table lines 47-48: `(_, Revoked) => true` — every non-terminal. Eight
-  // single-job fixtures, one per phase; the two desk phases are the
+  // single-job fixtures: one per live phase (Draft, Pending, Working,
+  // Evaluating, Landing — Frozen is gone, the notes deviation) and all
+  // THREE desk-reason flavors of the one parked phase (post-work wall,
+  // pre-work revalidation, cascade wall) — the desk fixtures are the
   // measure-FLAT cases (AUTHORING set), every live-rank phase must
   // strictly descend. Accounts are deliberately part-spent so the
   // no-leakage equality below is not vacuously "full grant == full grant".
@@ -813,16 +852,15 @@ module chuggy_test {
   /// Revoke charges no gas and spends (or refunds) no budget: every
   /// account unchanged, account by account.
   pure def accountsUntouched(pre: Job, post: Job): bool = and {
-    post.deadlineLeft == pre.deadlineLeft,
+    post.gasLeft == pre.gasLeft,
     post.reworkLeft == pre.reworkLeft,
     post.gateLeft == pre.gateLeft
   }
 
   pure def spent(j: Job): Job =
-    { ...j, deadlineLeft: 2, reworkLeft: 0, gateLeft: 1 }
+    { ...j, gasLeft: 2, reworkLeft: 0, gateLeft: 1 }
 
   pure val jDraft: Job = spent(DB::freshJob(Set(), progU2))
-  pure val jFrozen: Job = { ...jDraft, phase: PFrozen }
   pure val jPend: Job = { ...jDraft, phase: PPending }
   pure val jWork: Job = { ...jDraft, phase: PWorking,
     tasks: spawnTasks(TKWork, 1, 2) }
@@ -830,7 +868,10 @@ module chuggy_test {
   pure val jLand: Job = { ...jDraft, phase: PLanding }
   pure val jEsc: Job = { ...jDraft, phase: PEscalated,
     resumeAt: REvaluating, reason: RsReworkBudgetExhausted }
-  pure val jStall: Job = { ...jDraft, phase: PStalled, reason: RsRevalidationFailed }
+  pure val jParkPre: Job = { ...jDraft, phase: PEscalated,
+    resumeAt: RPending, reason: RsRevalidationFailed }
+  pure val jParkDep: Job = { ...jDraft, phase: PEscalated,
+    reason: RsDependencyRevoked }        // resumeAt RNone: no modeled resume
 
   pure def revokeOne(j: Job): Decision =
     DB::decideRevoke({ jobs: Map(1 -> j) }, 1)
@@ -845,9 +886,9 @@ module chuggy_test {
   }
 
   run revokeFromEachPhaseTest = assert(and {
-    revokeOneOk(jDraft), revokeOneOk(jFrozen), revokeOneOk(jPend),
+    revokeOneOk(jDraft), revokeOneOk(jPend),
     revokeOneOk(jWork), revokeOneOk(jEval), revokeOneOk(jLand),
-    revokeOneOk(jEsc), revokeOneOk(jStall)
+    revokeOneOk(jEsc), revokeOneOk(jParkPre), revokeOneOk(jParkDep)
   })
 
   /// PR 3: revoke RETAINS the task record — "Revoked runs nothing" is
@@ -867,20 +908,20 @@ module chuggy_test {
 
   /// Measure classification of revoke, pinned: strict descent from every
   /// live-rank phase (the settled tier swallows rank, stage digit AND
-  /// running tasks); exactly FLAT from the two desk phases with nobody to
+  /// running tasks); exactly FLAT from every desk flavor with nobody to
   /// park — the AUTHORING set's bounded desk-settle member.
   pure def mOne(j: Job): int = mB({ jobs: Map(1 -> j) })
   pure def mOneAfter(j: Job): int = mB(revokeOne(j).post)
 
   run revokeMeasureClassifiedTest = assert(and {
     mOneAfter(jDraft) < mOne(jDraft),
-    mOneAfter(jFrozen) < mOne(jFrozen),
     mOneAfter(jPend) < mOne(jPend),
     mOneAfter(jWork) < mOne(jWork),
     mOneAfter(jEval) < mOne(jEval),
     mOneAfter(jLand) < mOne(jLand),
     mOneAfter(jEsc) == mOne(jEsc),      // desk revoke: flat, by design
-    mOneAfter(jStall) == mOne(jStall)
+    mOneAfter(jParkPre) == mOne(jParkPre),
+    mOneAfter(jParkDep) == mOne(jParkDep)
   })
 
   /// Table lines 45-46, `(Done | Revoked, Revoked) => false`: the
@@ -919,19 +960,22 @@ module chuggy_test {
   run cascadeEndToEndTest = assert(and {
     dCascade.rec.label == "job-revoked",
     // One StepRecord, ascending: the revoke then both parks — atomic.
+    // Notes PR: the parks land on PEscalated, the one parked phase.
     dCascade.rec.transitions == [
       { job: 1, from: PPending, to: PRevoked },
-      { job: 2, from: PPending, to: PStalled },
-      { job: 3, from: PDraft, to: PStalled }
+      { job: 2, from: PPending, to: PEscalated },
+      { job: 3, from: PDraft, to: PEscalated }
     ],
     // A desk task per parked dependent; NONE for the revoked job.
     dCascade.rec.effects == ["Revoke", "OpenHumanTask", "OpenHumanTask"],
     revokedShape(cParked.jobs.get(1)),
-    cParked.jobs.get(2).phase == PStalled,
+    cParked.jobs.get(2).phase == PEscalated,
     cParked.jobs.get(2).reason == RsDependencyRevoked,
+    cParked.jobs.get(2).resumeAt == RNone,   // no modeled resume: exit is revoke
     hasOpenHumanTask(cParked.jobs.get(2)),
-    cParked.jobs.get(3).phase == PStalled,
+    cParked.jobs.get(3).phase == PEscalated,
     cParked.jobs.get(3).reason == RsDependencyRevoked,
+    cParked.jobs.get(3).resumeAt == RNone,
     hasOpenHumanTask(cParked.jobs.get(3)),
     // The cascade spends nothing on anyone.
     accountsUntouched(cChain.jobs.get(2), cParked.jobs.get(2)),
@@ -941,21 +985,22 @@ module chuggy_test {
   })
 
   /// The parked dependents' walls resolve by REVOKE, not retry: the
-  /// dependency_revoked wall is not retryable (deps are immutable — the
-  /// deliberate table-line-44 deviation documented at stallRetryableIn),
-  /// while the revalidation wall stays retryable. A human revoking parked
-  /// job 2 settles it from the desk: flat measure (AUTHORING member), no
-  /// re-park of already-parked 3, and job 3's task stays open.
+  /// dependency_revoked wall is not retryable (deps are immutable, no
+  /// modeled resume exists — the deliberate table-line-44 deviation
+  /// documented at retryableIn), while the revalidation wall stays
+  /// retryable. A human revoking parked job 2 settles it from the desk:
+  /// flat measure (AUTHORING member), no re-park of already-parked 3, and
+  /// job 3's task stays open.
   pure val dSettle2 = DB::decideRevoke(cParked, 2)
 
   run cascadeSettleByRevokeTest = assert(and {
-    not(DB::stallRetryableIn(cParked, 2)),         // dependency_revoked: no retry
-    not(DB::stallRetryableIn(cParked, 3)),
-    DB::stallRetryableIn(dStall.post, 1),          // revalidation_failed: retryable
-    dSettle2.rec.transitions == [{ job: 2, from: PStalled, to: PRevoked }],
+    not(DB::retryableIn(cParked, 2)),              // dependency_revoked: no retry
+    not(DB::retryableIn(cParked, 3)),
+    DB::retryableIn(dPark.post, 1),                // revalidation_failed: retryable
+    dSettle2.rec.transitions == [{ job: 2, from: PEscalated, to: PRevoked }],
     dSettle2.rec.effects == ["Revoke"],
     mB(dSettle2.post) == mB(cParked),              // desk revoke: flat, pinned
-    dSettle2.post.jobs.get(3).phase == PStalled,   // 3 untouched, still covered
+    dSettle2.post.jobs.get(3).phase == PEscalated, // 3 untouched, still covered
     hasOpenHumanTask(dSettle2.post.jobs.get(3))
   })
 }

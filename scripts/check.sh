@@ -249,7 +249,7 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PRs 1-3 (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
@@ -257,9 +257,9 @@ echo "=== Stage 9: chuggy-model PRs 1-3 (typecheck + unit tests + invariant simu
 # churn exemption in stepDescends must be exercised by a machine run).
 # PR 2 (authoring lifecycle; gate: revoke cascades proved safe) rides the
 # SAME runs: every instance starts empty and runs the authoring actions
-# (arrive/freeze/unfreeze/release/revoke), and allInvariants gained
-# revokedNeverLands, cascadeSafety, terminalsAbsorbing, and idsDense — plus
-# a second expected-violation probe in 9b for cascade reachability.
+# (arrive/release/revoke), and allInvariants gained revokedNeverLands,
+# cascadeSafety, terminalsAbsorbing, and idsDense — plus a second
+# expected-violation probe in 9b for cascade reachability.
 # PR 3 (task-records depth; gate: phase-outcome combinators pinned by the
 # eval vocabulary extracted from chuggernaut) rides the same runs AGAIN,
 # with PROGRAMS ENABLED: every instance sets MAX_STAGES = 2, so arrivals
@@ -267,6 +267,12 @@ echo "=== Stage 9: chuggy-model PRs 1-3 (typecheck + unit tests + invariant simu
 # allInvariants gained recordWellFormed, recordMonotone, and
 # programsWellFormed — plus a third expected-violation probe in 9b for
 # stage-advance reachability.
+# The NOTES-RECONCILIATION PR (docs/chuggy-notes-triage.md) rides them all
+# once more with the reshaped machine: Frozen removed (no freeze/unfreeze
+# actions), Stalled merged into Escalated (the pre-work resume is an
+# operator-retry flavor; no stalled-retry action), gas rename, REWORK_POLICY.
+# The shrunk action list changed the simulator's nondet structure, so every
+# 9b seed was re-examined; forensics at each probe.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -282,25 +288,37 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only \
   --invariant=allInvariants --max-samples=2000 --max-steps=40
 npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=allInvariants --max-samples=2000 --max-steps=40
+# Pin stepDescends' RetryFree CHURN exemption on a trace KNOWN to contain the
+# free pipeline-resume climb (the 9b seed below): the 9b witness proves the
+# climb reachable, but only allInvariants ON that trace proves the exemption
+# arm exempts it — a sign-flip there ships green through everything else
+# (found by adversarial review; mutant-verified).
+npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
+  --invariant=allInvariants --max-samples=50000 --max-steps=40 \
+  --seed=0x240a2d65e1e3e305 --backend=rust
 
 # 9b — anti-vacuity, expected-fail (the Stage 6a pattern: pinned seed, rust
 # backend, grep the verdict — never trust exit codes alone). On the
-# RetryFree instance the witness freeClimbNever ("no operator-retry ever
-# climbs the measure") MUST be violated: a free resume into
-# Evaluating/Landing climbs the measure and is exactly the CHURN arm that
-# stepDescends exempts. If this run ever passes, that exemption has become
-# dead code (or free retries silently started charging) — fail loudly.
-# (Seed re-pinned for PR 3 — the second re-pin, same reason as PR 2's: the
-# nondet structure changed again — arrivals now draw an eval program, and
-# taskDone's id range covers the whole retained history, so duplicate
-# no-ops dilute the escalate-then-free-resume shape. PR 2's seed
-# 0x1d4e77a47c8ba09e was verified GENUINELY DEAD before re-pinning: its
-# full 50k-sample budget ran to completion with no violation. The new seed
-# was found unseeded within ~1M samples (~40s, rust backend) and
-# reproduces the violation on its first trace.)
+# RetryFree instance the witness freeClimbNever ("no operator-retry into a
+# pipeline phase ever climbs the measure") MUST be violated: a free resume
+# into Evaluating/Landing climbs the measure and is exactly the RetryFree
+# CHURN arm that stepDescends exempts. If this run ever passes, that
+# exemption has become dead code (or free retries silently started
+# charging) — fail loudly. (The witness deliberately excludes the pre-work
+# RPending resume, which climbs free under BOTH meterings — domain.qnt
+# freeClimbNever has the argument.)
+# (Seed re-pinned for the notes-reconciliation PR — the third re-pin, same
+# reason as PR 2's and PR 3's: the nondet structure changed again — the
+# step action list shrank by three (freeze/unfreeze/stalled-retry gone)
+# and the witness was refined to the pipeline-resume shape. PR 3's seed
+# 0x2b196ffb57466d4d was verified GENUINELY DEAD before re-pinning: its
+# full 50k-sample budget ran to completion with no violation ([ok], 32s).
+# The new seed was found unseeded within ~907k samples (~36s, rust
+# backend) and reproduces the violation on its first trace (37ms), with
+# the operator-retry-into-Evaluating signature in the trace.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
-  --max-samples=50000 --max-steps=40 --seed=0x2b196ffb57466d4d --backend=rust 2>&1); then
+  --max-samples=50000 --max-steps=40 --seed=0x240a2d65e1e3e305 --backend=rust 2>&1); then
   echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
   echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
   exit 1
@@ -325,7 +343,12 @@ echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt C
 # against traces where the cascade actually fires — without it, a fleet
 # whose revokeDoomed set stayed empty would satisfy cascadeSafety
 # vacuously. The unit tests walk the 3-job chain deterministically; this
-# pins the same shape as REACHABLE in the machine.
+# pins the same shape as REACHABLE in the machine. (Notes-PR forensics:
+# the parks now land on PEscalated — the merged desk — but the witness
+# shape, label, and RsDependencyRevoked signature are unchanged, and the
+# PR 2 seed SURVIVED the re-examination: it still violates within its
+# budget on the reshaped machine (38ms) with both signature greps hit, so
+# it is deliberately NOT re-pinned.)
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=cascadeParkNever \
   --max-samples=20000 --max-steps=40 --seed=0x5cea1f53f74a0e4e --backend=rust 2>&1); then
@@ -356,7 +379,9 @@ echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the P
 # unexercised. The unit tests walk the advance deterministically; this
 # pins it as REACHABLE. (Old PR 1-2 seeds cannot cover this — the label
 # did not exist; probe and seed are PR 3-new, found unseeded within ~25k
-# samples.)
+# samples. Notes-PR forensics: the PR 3 seed SURVIVED the re-examination —
+# it still violates within its budget on the reshaped machine (631ms) with
+# the eval-stage-passed signature, so it is deliberately NOT re-pinned.)
 if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=stageAdvanceNever \
   --max-samples=20000 --max-steps=40 --seed=0x9180927e576bcf85 --backend=rust 2>&1); then

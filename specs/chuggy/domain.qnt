@@ -7,9 +7,33 @@
 ///
 /// PR 2 (authoring lifecycle, charter §2 first-class rank #1; gate: revoke
 /// cascades proved safe) is IN: jobs arrive as Drafts through the
-/// `freshJob` seam PR 1 kept open, the Draft/Frozen pair sits above the
-/// released pipeline, and Revoked is the second settled terminal with an
-/// ATOMIC park-cascade (decideRevoke) covering its dependents.
+/// `freshJob` seam PR 1 kept open, and Revoked is the second settled
+/// terminal with an ATOMIC park-cascade (decideRevoke) covering its
+/// dependents.
+///
+/// THE NOTES-RECONCILIATION PR (docs/chuggy-notes-triage.md, "changed now")
+/// reshaped the machine after geoff and davemo88's v1-review notes, with
+/// the measure reworked first (standing rule 1 — see measure.qnt's header
+/// for the rank/radix re-derivation). In this file:
+///   - "Frozen removed. Draft -> Ready/Blocked": PDraft is the only
+///     authoring phase; decideFreeze/decideUnfreeze are DELETED and
+///     decideRelease goes Draft -> PPending directly — a deliberate
+///     deviation from v1's table lines 22/24/26, recorded at decideRelease.
+///   - "stalled should be rolled into escalated": PEscalated is THE
+///     parked-with-open-human-task phase; the revalidation park and the
+///     revoke cascade's wall both land there, distinguished by `reason`,
+///     and the old stalled-retry is now decideOpRetry's RPending arm
+///     (still free — nothing was ever spent; still CHURN).
+///   - "task state machine": tasks carry the explicit TaskState lifecycle
+///     (measure.qnt) — a structuring change only; every decider's behavior
+///     is unchanged and the PR 3 tests pass with mechanical updates.
+///   - "agentic dispatcher modeled (not FIFO)": the dispatch chooser is
+///     documented AS the dispatcher's agency — see the `dispatch` action.
+///   - "rework budget ... into impl / middleware": REWORK_POLICY
+///     (ReworkPolicy, the GatePricing pattern) replaces the bare budget
+///     const; the account stays on Job as documented policy state.
+///   - gas rename: GAS / gasLeft / gas_exhausted / RsGasExhausted — the
+///     charter's required "deadline" account under its honest name.
 ///
 /// PR 3 (task-records depth; gate: phase-outcome combinators pinned by a
 /// real eval/vocabulary example) is IN. The intake question
@@ -39,11 +63,14 @@
 /// authoring came first; decideEvalStageReduce below is the interpreter.
 ///
 /// What is deliberately NOT here (and which roadmap PR restores it):
-///   - Batched + the merge queue it serves (PR 5) — the v1 table's
-///     (Frozen, Batched) and (Batched, Frozen|Done) rows (table.qnt lines
-///     27-30) are deliberately not transcribed yet; chuggernaut's STAGED
-///     MERGE GATE (spec.md §3.3 Merge Gate item 3 — gate stages, the
-///     gate-fix fast path) defers WITH it;
+///   - Batched + the merge queue it serves (PR 5) — the v1 table's Batched
+///     rows (table.qnt lines 27-30) are deliberately not transcribed yet,
+///     and the notes follow-up RE-SITED the state ("Batched from Ready or
+///     Blocked"): when PR 5 lands it, Batched enters from PPending — the
+///     released pre-work state whose Ready/Blocked split is derived — not
+///     from authoring as v1's table had it (README, deliberately-absent
+///     table); chuggernaut's STAGED MERGE GATE (spec.md §3.3 Merge Gate
+///     item 3 — gate stages, the gate-fix fast path) defers WITH it;
 ///   - multi-repo (PR 4); merge-queue + landing mechanics (PR 5);
 ///   - scheduler/capacity: NO agent-slot count, NO FIFO ready queue —
 ///     charter §2 non-goals (no bespoke scheduler) plus the trusted fabric
@@ -75,11 +102,17 @@ module chuggy_domain {
   /// widths per-stage data, so the const became their bound — the measure's
   /// stageWeight radix needs exactly this cap.
   const N_TASKS: int
-  /// Budgeted eval-failure reworks.
-  const REWORK_BUDGET: int
-  /// Deadline gas per job. REQUIRED >= 1: a graph without a deadline is
-  /// invalid (charter §2 economy/deadline) — init admits no state otherwise.
-  const DEADLINE: int
+  /// Eval-rework pricing (notes PR: the bound is a POLICY PARAMETER on the
+  /// GatePricing pattern, not a core-entity constant — RWBudget(n) is the
+  /// only branch for now, argued at the type in measure.qnt; the account
+  /// it grants is middleware-owned policy state, documented at
+  /// Job.reworkLeft).
+  const REWORK_POLICY: ReworkPolicy
+  /// Gas per job — the charter's REQUIRED account (§2 economy/deadline),
+  /// renamed by the notes PR ("what is deadline left": a spend meter, not
+  /// a clock). REQUIRED >= 1: a gasless graph is invalid — init admits no
+  /// state otherwise; the charter row's force is unchanged.
+  const GAS: int
   /// Gate-rework pricing (charter §2: a parameter, not a constant; both
   /// branches instantiated in mc/mc_chuggy.qnt).
   const GATE_PRICING: GatePricing
@@ -97,7 +130,7 @@ module chuggy_domain {
 
   /// The measure's bounds, from this instance's consts.
   pure val bounds: Bounds = {
-    reworkBudget: REWORK_BUDGET,
+    reworkPolicy: REWORK_POLICY,
     nTasks: N_TASKS,
     maxStages: MAX_STAGES,
     gatePricing: GATE_PRICING
@@ -127,11 +160,11 @@ module chuggy_domain {
   /// default) is byte-for-byte the single-fan-out behavior, and that is
   /// the compatibility story"): ONE stage, full fan-out, unanimous. A job
   /// carrying this program behaves exactly like the PR 1-2 machine —
-  /// pinned in tests/chuggy_test.qnt. PR 3 removed the EVAL_COMBINATOR
-  /// const in its favor: a machine-wide combinator parameter was PR 1's
-  /// stand-in for eval-as-data; now that the combinator is data on the job
-  /// record, a const would be exactly the "machinery" the charter row says
-  /// eval is not.
+  /// pinned in tests/chuggy_test.qnt. PR 3 retired PR 1's machine-wide
+  /// combinator parameter in this program's favor: that const was the
+  /// stand-in for eval-as-data; now that the combinator is data on the
+  /// job record, a const would be exactly the "machinery" the charter row
+  /// says eval is not.
   pure val defaultProgram: List[Stage] =
     [{ fanout: N_TASKS, combinator: CUnanimousPass }]
 
@@ -149,9 +182,9 @@ module chuggy_domain {
     tasks: Set(),
     record: [],
     spawned: 0,
-    reworkLeft: REWORK_BUDGET,
+    reworkLeft: reworkBudget(REWORK_POLICY),
     gateLeft: gateBudget(GATE_PRICING),
-    deadlineLeft: DEADLINE,
+    gasLeft: GAS,
     resumeAt: RNone,
     reason: RsNone,
     landings: 0
@@ -183,10 +216,11 @@ module chuggy_domain {
   pure def noop(c: Core, label: str): Decision =
     { rec: { label: label, transitions: [], effects: [] }, post: c }
 
-  // --- Authoring (PR 2): arrival, freeze/unfreeze, release, revoke ---------
-  // Vocabulary source: specs/chuggernaut/table.qnt (verbatim from
+  // --- Authoring (PR 2, reshaped by the notes PR): arrival, release, ------
+  // revoke. Vocabulary source: specs/chuggernaut/table.qnt (verbatim from
   // chuggernaut state.rs). Each decider cites the table row it adopts;
-  // deviations are called out where they happen.
+  // deviations are called out where they happen — including the notes PR's
+  // deletion of the freeze/unfreeze pair (see decideRelease).
 
   /// A job ARRIVES as a Draft — the environment (an author) creates it.
   /// NOT a table edge: v1's table starts at Draft and has no birth row (its
@@ -194,9 +228,9 @@ module chuggy_domain {
   /// authoring being the job source now (charter §2 first-class rank #1).
   /// Ids are dense and never reused (next id = fleet size + 1), which keeps
   /// every ascending-id fold below correct. Dependencies may point at ANY
-  /// live job, released or not (Draft/Frozen deps block exactly like
+  /// live job, released or not (Draft deps block exactly like
   /// not-yet-Done ones) — but never at a tombstone: not a Revoked job, and
-  /// not a job the cascade already parked behind one (Stalled with
+  /// not a job the cascade already parked behind one (Escalated with
   /// dependency_revoked — by cascadeSafety those two cases are EXACTLY the
   /// transitively-doomed jobs). The author cannot depend on either
   /// (authoring-time validation; admitting one would create a job doomed
@@ -214,37 +248,34 @@ module chuggy_domain {
   /// Dynamic-DAG boundary (charter §3): arrivals are AUTHOR actions — only
   /// the environment action `arrive` calls this decider, and no job-event
   /// decider creates jobs, so the job set grows only by authoring, never by
-  /// jobs spawning jobs. Author commands (freeze/unfreeze/release/revoke)
-  /// are also guarded by enablement, not absorbed as duplicates: authors
-  /// are command sources, not the at-least-once fabric — only fabric events
-  /// get idempotent stutter deciders.
+  /// jobs spawning jobs. Author commands (release/revoke) are also guarded
+  /// by enablement, not absorbed as duplicates: authors are command
+  /// sources, not the at-least-once fabric — only fabric events get
+  /// idempotent stutter deciders.
   pure def decideArrive(c: Core, deps_: Set[int], prog: List[Stage]): Decision =
     val id = c.jobs.keys().size() + 1
     { rec: { label: "job-arrived", transitions: [], effects: ["CreateDraft"] },
       post: { ...c, jobs: c.jobs.put(id, freshJob(deps_, prog)) } }
 
-  /// Draft -> Frozen (table line 22: `(Draft, ... | Frozen)`): the author
-  /// pins the job's content. Descends (rank 6 -> 5).
-  pure def decideFreeze(c: Core, j: int): Decision =
-    move(c, j, PFrozen, "job-frozen", [])
-
-  /// Frozen -> Draft (table line 24: `(Frozen, Draft)`): the author thaws
-  /// the job to edit again — THE authoring loop. The table has no
-  /// Draft -> Draft row (content edits are below the phase table's grain),
-  /// so this unfreeze edge is the loop's entire phase-level footprint: the
-  /// AUTHORING churn set in measure.qnt (climbs rank 5 -> 6), which is what
-  /// makes per-job liveness conditional on authors eventually releasing or
-  /// revoking.
-  pure def decideUnfreeze(c: Core, j: int): Decision =
-    move(c, j, PDraft, "job-unfrozen", [])
-
-  /// {Draft, Frozen} -> Pending (table lines 21-22 `(Draft, Ready |
-  /// Blocked | ...)` and lines 25-26 `(Frozen, Ready | Blocked)`): the job
-  /// enters the released pipeline. Both table targets collapse to PPending
-  /// because Ready/Blocked are DERIVED predicates in chuggy (standing rule
-  /// 3, the PR 1 decision) — the split re-derives from deps the moment the
-  /// phase lands. Descends (rank 6 or 5 -> 4). Charges nothing: the
-  /// Working boundary still meters actual work entry (standing rule 2).
+  /// Draft -> Pending (table line 21 `(Draft, Ready | Blocked | ...)`):
+  /// the job enters the released pipeline. The table's Ready/Blocked
+  /// targets collapse to PPending because the split is DERIVED (standing
+  /// rule 3, the PR 1 decision) — it re-derives from deps the moment the
+  /// phase lands. Descends (rank 5 -> 4). Charges nothing: the Working
+  /// boundary still meters actual work entry (standing rule 2).
+  ///
+  /// DELIBERATE DEVIATION (notes PR, docs/chuggy-notes-triage.md: "Frozen
+  /// removed. Draft -> Ready/Blocked"): the v1 table's Frozen rows — line
+  /// 22 `(Draft, Frozen)` (freeze), line 24 `(Frozen, Draft)` (the
+  /// unfreeze edit loop), line 26 `(Frozen, Ready | Blocked)` (release
+  /// from Frozen) — are NOT transcribed. PR 2 carried all three; the note
+  /// deletes the phase, so release now leaves from Draft alone and the
+  /// content-pinning freeze step is below the model's grain (an
+  /// implementation concern of the authoring surface, like Draft content
+  /// edits always were). Consequence for the liveness sketch: the unfreeze
+  /// loop was the AUTHORING churn set's only unbounded climber, so its
+  /// removal leaves arrival as that set's only climbing member
+  /// (measure.qnt AUTHORING).
   pure def decideRelease(c: Core, j: int): Decision =
     move(c, j, PPending, "job-released", [])
 
@@ -269,7 +300,7 @@ module chuggy_domain {
   /// blocks, and PRevoked never becomes PDone). Of the two candidate
   /// semantics —
   ///   (a) transitive cascade-REVOKE: dependents are revoked too;
-  ///   (b) PARK: dependents stall on the desk with a named wall —
+  ///   (b) PARK: dependents wait on the desk behind a named wall —
   /// chuggy picks (b), ATOMICALLY in this decision, for two charter
   /// reasons. First, revocation is a per-job authorial choice: (a) would
   /// let one author's revocation silently destroy OTHER jobs with no human
@@ -282,15 +313,18 @@ module chuggy_domain {
   /// atomic with the revoke — same decision, one StepRecord — so
   /// cascadeSafety holds in EVERY reachable state, never just eventually.
   ///
-  /// Why parking only PDraft/PFrozen/PPending dependents is exhaustive: a
+  /// Why parking only PDraft/PPending dependents is exhaustive: a
   /// transitive dependent of a revocable (hence non-Done) job can never
   /// have dispatched — dispatch needs all deps Done, Done is absorbing, and
   /// the revoked ancestor is not Done — so every dependent is still
-  /// pre-flight: Draft, Frozen, Pending, or already settled by an earlier
-  /// cascade (PStalled RsDependencyRevoked) or by its own author
-  /// (PRevoked). The filter parks exactly the first three and leaves the
+  /// pre-flight: Draft, Pending, or already settled by an earlier
+  /// cascade (PEscalated RsDependencyRevoked) or by its own author
+  /// (PRevoked). The filter parks exactly the first two and leaves the
   /// already-settled alone (no duplicate transitions). Pre-flight jobs hold
   /// no live tasks, so the cascade retires nothing on the parked side.
+  /// The parked wall stamps NO resume point (resumeAt stays RNone): deps
+  /// are immutable, so no modeled resume exists — the wall's only exit is
+  /// revoke (retryableIn; the deliberate table-line-44 deviation).
   pure def decideRevoke(c: Core, j: int): Decision =
     val n = c.jobs.keys().size()
     // Transitive dependents of j: deps point strictly downward, so one
@@ -302,7 +336,7 @@ module chuggy_domain {
         dset.union(Set(k)) else dset)
     val parked = doomedByJ.filter(k =>
       val p = c.jobs.get(k).phase
-      p == PDraft or p == PFrozen or p == PPending)
+      p == PDraft or p == PPending)
     // Ascending, deterministic order for the golden-trace record.
     val parkedList = range(1, n + 1).foldl([], (l, k) =>
       if (parked.contains(k)) l.append(k) else l)
@@ -311,7 +345,7 @@ module chuggy_domain {
         transitions:
           [{ job: j, from: c.jobs.get(j).phase, to: PRevoked }]
             .concat(parkedList.foldl([], (l, k) =>
-              l.append({ job: k, from: c.jobs.get(k).phase, to: PStalled }))),
+              l.append({ job: k, from: c.jobs.get(k).phase, to: PEscalated }))),
         // "Revoke" for the revoked job; one OpenHumanTask per parked
         // dependent — and NONE for the revoked job itself.
         effects: ["Revoke"].concat(parkedList.foldl([], (l, k) =>
@@ -321,7 +355,7 @@ module chuggy_domain {
           { ...retireLive(c.jobs.get(k)), phase: PRevoked,
             resumeAt: RNone, reason: RsNone }
         else if (parked.contains(k))
-          { ...c.jobs.get(k), phase: PStalled, reason: RsDependencyRevoked }
+          { ...c.jobs.get(k), phase: PEscalated, reason: RsDependencyRevoked }
         else c.jobs.get(k)) } }
 
   // --- Pure guard predicates (PR 2: shared by actions and unit tests) ------
@@ -331,24 +365,51 @@ module chuggy_domain {
   pure def revocableIn(c: Core, j: int): bool =
     c.jobs.get(j).phase != PDone and c.jobs.get(j).phase != PRevoked
 
-  /// May the operator retry this stall? RsRevalidationFailed: yes — v1's
-  /// (Stalled, Ready) edge (table line 44), nothing was ever spent.
-  /// RsDependencyRevoked: NO — a DELIBERATE RESTRICTION of table line 44:
-  /// deps are immutable in this model (no re-authoring machinery yet), so a
-  /// retry could only re-enter Pending still doomed behind the same revoked
-  /// dep — a lie to the desk and an immediate cascadeSafety hole. The
-  /// dependency_revoked wall's only modeled exit is revoke; dep re-authoring
-  /// is future work (README, deliberately-absent table).
-  pure def stallRetryableIn(c: Core, j: int): bool =
-    c.jobs.get(j).phase == PStalled and
-    c.jobs.get(j).reason != RsDependencyRevoked
+  /// What one operator resume costs, by flavor (notes PR: with Stalled
+  /// merged into Escalated, ONE decider — decideOpRetry — carries every
+  /// resume, and this table is its pricing):
+  ///   RPending    — 0 under BOTH meterings, deliberately: a pre-work park
+  ///                 (revalidation_failed) spent nothing, so its resume
+  ///                 charges nothing — the old stalled-retry's pricing,
+  ///                 kept ("still free", the triage's resume-flavor row);
+  ///                 the Working boundary still meters any actual re-entry
+  ///                 (standing rule 2). CHURN in the measure.
+  ///   RWorking    — 1 always: entry to Working always meters (standing
+  ///                 rule 2), even under RetryFree.
+  ///   REvaluating/RLanding — per OP_RETRY_PRICING (charter §2:
+  ///                 configurable, default charge); RetryFree makes these
+  ///                 the reproducible v1 livelock (model-status §5b).
+  /// RNone falls through the wildcard but is unreachable: retryableIn
+  /// refuses it and decideOpRetry's RNone arm is a guarded no-op.
+  pure def resumeCharge(at: Resume): int =
+    match at {
+      | RPending => 0
+      | RWorking => 1
+      | _ => match OP_RETRY_PRICING { | RetryCharged => 1 | RetryFree => 0 }
+    }
+
+  /// May the operator Retry this parked job? Parked is PEscalated (the
+  /// only desk phase now); a resume must EXIST (resumeAt != RNone) and be
+  /// AFFORDABLE (a charging resume needs gas). The one wall with no
+  /// modeled resume is dependency_revoked (resumeAt RNone) — a DELIBERATE
+  /// RESTRICTION of v1's table line 44 (Stalled, Ready): deps are
+  /// immutable in this model (no re-authoring machinery yet), so a retry
+  /// could only re-enter Pending still doomed behind the same revoked dep
+  /// — a lie to the desk and an immediate cascadeSafety hole. That wall's
+  /// only modeled exit is revoke; dep re-authoring is future work (README,
+  /// deliberately-absent table).
+  pure def retryableIn(c: Core, j: int): bool = and {
+    c.jobs.get(j).phase == PEscalated,
+    c.jobs.get(j).resumeAt != RNone,
+    resumeCharge(c.jobs.get(j).resumeAt) <= c.jobs.get(j).gasLeft
+  }
 
   pure def depsDoneIn(c: Core, j: int): bool =
     c.jobs.get(j).deps.forall(k => c.jobs.get(k).phase == PDone)
 
   /// The derived waiting room (standing rule 3), as pure predicates over a
   /// Core so tests can pin them: a dep that is not Done blocks — including
-  /// UNRELEASED deps (Draft/Frozen, PR 2) and, transiently impossible but
+  /// UNRELEASED deps (Draft, PR 2) and, transiently impossible but
   /// definitionally covered, revoked ones.
   pure def isReadyIn(c: Core, j: int): bool =
     c.jobs.get(j).phase == PPending and depsDoneIn(c, j)
@@ -360,26 +421,46 @@ module chuggy_domain {
   /// from v1; the charter §2 termination row commits the terminal, not the
   /// names) and where Retry resumes. The open desk task is DERIVED from
   /// the phase (hasOpenHumanTask, standing rule 3); "OpenHumanTask" is its
-  /// trace-visible effect. PR 3: the failed set is RETIRED into the
-  /// retained record, not dropped — escalation is always reached at a
-  /// reduce, so the set is fully resolved and the TCancelled arm of
-  /// retireLive never fires here.
+  /// trace-visible effect. Notes PR: this is THE park — the pre-work
+  /// revalidation wall comes through here too (decideRevalFail, resume
+  /// RPending), since Escalated is the one parked phase. PR 3: the failed
+  /// set is RETIRED into the retained record, not dropped — every pipeline
+  /// escalation is reached at a reduce, so the set is fully resolved and
+  /// the TCancelled arm of retireLive never fires here; a pre-work park
+  /// holds no tasks, so retireLive is a no-op for it.
   pure def escalate(c: Core, j: int, at: Resume, why: Reason, label: str): Decision =
     move(
       withJob(c, j, { ...retireLive(c.jobs.get(j)), resumeAt: at, reason: why }),
       j, PEscalated, label, ["OpenHumanTask"])
 
-  /// Ready -> Working: launch a cycle. Charges one deadline gas — EVERY
-  /// entry to Working does (standing rule 2: no free re-entry; the deadline
-  /// is the account that makes the graph valid at all). Work is ONE
-  /// task-set phase (kasofsk's anatomy note; chuggernaut spec.md §1.2:
-  /// one work task per cycle — Work is not staged), width N_TASKS, ids
-  /// sequential within the job (PR 3).
+  /// Ready -> Working: launch a cycle for the job THE DISPATCHER CHOSE.
+  /// Charges one gas — EVERY entry to Working does (standing rule 2: no
+  /// free re-entry; gas is the account that makes the graph valid at all).
+  /// Work is ONE task-set phase (kasofsk's anatomy note; chuggernaut
+  /// spec.md §1.2: one work task per cycle — Work is not staged), width
+  /// N_TASKS, ids sequential within the job (PR 3).
+  ///
+  /// THE AGENTIC DISPATCHER (notes PR, "agentic dispatcher modeled (not
+  /// FIFO)"): this decider is the dispatch decision made first-class — j
+  /// is the CHOICE, and the chooser is the `dispatch` action's nondet pick
+  /// among readyJobs. That pick is not incidental scheduler noise to be
+  /// refined away: chuggy's dispatcher is itself agentic (the v1 note:
+  /// "the dispatcher working with the ready q is not pure fifo popping,
+  /// it's nondet outcome because the dispatcher is also agentic"), so ANY
+  /// Ready job may be chosen next, and the `dispatch` StepRecord in the
+  /// trace IS the dispatcher's decision event — an implementation
+  /// conforms with any policy (LLM-driven, priority, whatever) because
+  /// every policy refines unrestricted choice among Ready jobs. No
+  /// policy-hook parameter is introduced: with exactly one honest default
+  /// (unrestricted nondet) a GatePricing-style const would have one
+  /// branch and nothing to compare — it enters only when a real competing
+  /// policy needs modeling. No queue, no fairness — non-goals unchanged
+  /// (charter §2).
   pure def decideDispatch(c: Core, j: int): Decision =
     val jb = c.jobs.get(j)
     move(
       withJob(c, j, { ...spawnOn(jb, TKWork, N_TASKS),
-        deadlineLeft: jb.deadlineLeft - 1 }),
+        gasLeft: jb.gasLeft - 1 }),
       j, PWorking, "dispatch", ["SpawnWorkTasks"])
 
   /// A task-completion event for task `tid` of job j (Working or
@@ -395,7 +476,7 @@ module chuggy_domain {
   /// nothing). No phase transition either way — task records resolve
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
-    if (c.jobs.get(j).tasks.exists(t => t.id == tid and t.outcome == TRunning))
+    if (c.jobs.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
       { rec: { label: "task-done", transitions: [], effects: [] },
         post: withJob(c, j, { ...c.jobs.get(j),
           tasks: resolveTask(c.jobs.get(j).tasks, tid,
@@ -419,7 +500,7 @@ module chuggy_domain {
   pure def decideWorkReduce(c: Core, j: int): Decision =
     val jb = c.jobs.get(j)
     val retired = retireLive(jb)
-    if (jb.tasks.forall(t => t.outcome == TPassed))
+    if (jb.tasks.forall(t => t.state == TSResolved(TPassed)))
       move(
         withJob(c, j, spawnOn(retired, TKEval(0), retired.program[0].fanout)),
         j, PEvaluating, "work-passed", ["SpawnEvalTasks"])
@@ -450,7 +531,7 @@ module chuggy_domain {
   ///     Evaluation RESTARTS FROM THE LOWEST STAGE ("stages are recomputed
   ///     per cycle, never resumed mid-sequence"); an empty account parks
   ///     the job behind the existing wall (budget wall checked before the
-  ///     deadline wall, v1 convention). No new wall, no new account.
+  ///     gas wall, v1 convention). No new wall, no new account.
   ///
   /// Evaluator-infrastructure death is a TFailed INSIDE the stage — THE
   /// JOB PAYS from the same accounts, no new machinery (charter §2
@@ -474,18 +555,18 @@ module chuggy_domain {
         move(
           withJob(c, j, retired),
           j, PLanding, "eval-passed", ["EnqueueLanding"])
-    else if (jb.reworkLeft > 0 and jb.deadlineLeft > 0)
+    else if (jb.reworkLeft > 0 and jb.gasLeft > 0)
       move(
         withJob(c, j, { ...spawnOn(retired, TKWork, N_TASKS),
           reworkLeft: jb.reworkLeft - 1,
-          deadlineLeft: jb.deadlineLeft - 1 }),
+          gasLeft: jb.gasLeft - 1 }),
         j, PWorking, "rework-started eval_failure", ["SpawnWorkTasks"])
     else if (jb.reworkLeft == 0)
       escalate(c, j, REvaluating, RsReworkBudgetExhausted,
         "job-escalated rework_budget_exhausted")
     else
-      escalate(c, j, REvaluating, RsDeadlineExceeded,
-        "job-escalated job_deadline_exceeded")
+      escalate(c, j, REvaluating, RsGasExhausted,
+        "job-escalated gas_exhausted")
 
   /// The landing resolves. Mechanics abstract (charter §2 landing row,
   /// deferred to PR 5) but OUTCOMES precisely named from day one: the two
@@ -511,27 +592,27 @@ module chuggy_domain {
       | LandFailed =>
         match GATE_PRICING {
           | Budgeted(_) =>
-            if (c.jobs.get(j).gateLeft > 0 and c.jobs.get(j).deadlineLeft > 0)
+            if (c.jobs.get(j).gateLeft > 0 and c.jobs.get(j).gasLeft > 0)
               move(
                 withJob(c, j, { ...spawnOn(c.jobs.get(j), TKWork, N_TASKS),
                   gateLeft: c.jobs.get(j).gateLeft - 1,
-                  deadlineLeft: c.jobs.get(j).deadlineLeft - 1 }),
+                  gasLeft: c.jobs.get(j).gasLeft - 1 }),
                 j, PWorking, "rework-started gate_failure", ["SpawnWorkTasks"])
             else if (c.jobs.get(j).gateLeft == 0)
               escalate(c, j, RLanding, RsGateBudgetExhausted,
                 "job-escalated gate_budget_exhausted")
             else
-              escalate(c, j, RLanding, RsDeadlineExceeded,
-                "job-escalated job_deadline_exceeded")
+              escalate(c, j, RLanding, RsGasExhausted,
+                "job-escalated gas_exhausted")
           | DeadlineOnly =>
-            if (c.jobs.get(j).deadlineLeft > 0)
+            if (c.jobs.get(j).gasLeft > 0)
               move(
                 withJob(c, j, { ...spawnOn(c.jobs.get(j), TKWork, N_TASKS),
-                  deadlineLeft: c.jobs.get(j).deadlineLeft - 1 }),
+                  gasLeft: c.jobs.get(j).gasLeft - 1 }),
                 j, PWorking, "rework-started gate_failure", ["SpawnWorkTasks"])
             else
-              escalate(c, j, RLanding, RsDeadlineExceeded,
-                "job-escalated job_deadline_exceeded")
+              escalate(c, j, RLanding, RsGasExhausted,
+                "job-escalated gas_exhausted")
         }
     }
 
@@ -543,38 +624,49 @@ module chuggy_domain {
   pure def decideLandDuplicate(c: Core, j: int): Decision =
     noop(c, "land-duplicate")
 
-  /// Ready -> Stalled: the world changed under a job before it ever ran
-  /// (static config no longer valid). Free — nothing was spent — and the
-  /// desk opens. PR 2 delivered the anticipated second stall cause: the
-  /// cascade's dependency_revoked wall (decideRevoke) — which, unlike this
-  /// one, is NOT retryable (stallRetryableIn).
+  /// Ready -> Escalated behind the revalidation wall: the world changed
+  /// under a job before it ever ran (static config no longer valid). Free
+  /// — nothing was spent — and the desk opens. Notes PR ("stalled should
+  /// be rolled into escalated"): this used to be its own PStalled phase;
+  /// now it is a PARK like any other — Escalated with a pre-work reason
+  /// and the pre-work resume point (RPending: an operator retry returns
+  /// the job to Pending, where Ready/Blocked re-derive — never to a
+  /// pipeline phase, because it never entered one). The OTHER pre-work
+  /// wall is the cascade's dependency_revoked (decideRevoke) — which,
+  /// unlike this one, is NOT retryable (retryableIn: resumeAt RNone).
   pure def decideRevalFail(c: Core, j: int): Decision =
-    move(
-      withJob(c, j, { ...c.jobs.get(j), reason: RsRevalidationFailed }),
-      j, PStalled, "job-stalled revalidation_failed", ["OpenHumanTask"])
+    escalate(c, j, RPending, RsRevalidationFailed,
+      "job-escalated revalidation_failed")
 
-  /// Operator Retry on an escalation: resume at the phase that failed,
-  /// metered per OP_RETRY_PRICING (charter §2: configurable, default
-  /// charge). RetryCharged: EVERY resume costs 1 gas — the v1 lesson
-  /// (model-status §5b: free resumes defeat the deadline) priced in.
-  /// RetryFree: only the Working resume pays (entry to Working always
-  /// meters — standing rule 2); Evaluating/Landing resumes are the CHURN
-  /// set in measure.qnt, v1's livelock kept reproducible by configuration.
-  /// PR 3: the Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE —
-  /// chuggernaut spec.md §1.2, escalation Retry semantics: "re-enter
-  /// Evaluation against the intact branch ... with a fresh eval fan-out";
-  /// stages are never resumed mid-sequence (§3.3). New ids: the retried
-  /// tasks are NEW records, the failed ones stay retired in the log.
+  /// Operator Retry on a parked job: resume at the point the wall stamped,
+  /// metered by resumeCharge (charter §2: configurable, default charge —
+  /// see the pricing table there). Notes PR: with Stalled merged into
+  /// Escalated this is THE operator resume — one decider, four flavors,
+  /// one trace label ("operator-retry"; the flavor is visible in the
+  /// transition's target):
+  ///   RPending (the old stalled-retry, now a resume flavor per the
+  ///     triage): back to Pending — Blocked/Ready re-derive — charging
+  ///     nothing under either metering (nothing was ever spent; the
+  ///     Working boundary still meters actual re-entry). CHURN in the
+  ///     measure, exactly as before the merge.
+  ///   RWorking: respawn the work set; always pays gas — the v1 lesson
+  ///     (model-status §5b: free resumes defeat the bound) priced in.
+  ///   REvaluating: A FRESH FAN-OUT OF THE LOWEST STAGE (PR 3 —
+  ///     chuggernaut spec.md §1.2 escalation Retry: "re-enter Evaluation
+  ///     against the intact branch ... with a fresh eval fan-out"; stages
+  ///     are never resumed mid-sequence, §3.3). New ids: the retried tasks
+  ///     are NEW records, the failed ones stay retired in the log.
+  ///   RLanding: re-enqueue the landing.
+  /// Under RetryFree the Evaluating/Landing resumes join the CHURN set —
+  /// v1's livelock kept reproducible by configuration.
   pure def decideOpRetry(c: Core, j: int): Decision =
     val jb = c.jobs.get(j)
-    val charge = match OP_RETRY_PRICING {
-      | RetryCharged => 1
-      | RetryFree => if (jb.resumeAt == RWorking) 1 else 0
-    }
     val resumed = { ...jb,
       reason: RsNone, resumeAt: RNone,
-      deadlineLeft: jb.deadlineLeft - charge }
+      gasLeft: jb.gasLeft - resumeCharge(jb.resumeAt) }
     match jb.resumeAt {
+      | RPending =>
+        move(withJob(c, j, resumed), j, PPending, "operator-retry", [])
       | RWorking =>
         move(withJob(c, j, spawnOn(resumed, TKWork, N_TASKS)),
           j, PWorking, "operator-retry", ["SpawnWorkTasks"])
@@ -584,18 +676,10 @@ module chuggy_domain {
       | RLanding =>
         move(withJob(c, j, resumed), j, PLanding, "operator-retry", ["EnqueueLanding"])
       | RNone =>
-        // Unreachable: every escalation stamps a real resume point.
+        // Unreachable: retryableIn refuses a job with no modeled resume
+        // (the dependency_revoked wall — its only exit is revoke).
         noop(c, "operator-retry-unreachable")
     }
-
-  /// Operator Retry on a pre-work stall: back to Pending (Blocked/Ready
-  /// re-derive). Free — nothing was ever spent, and the Working boundary
-  /// still meters any actual re-entry (standing rule 2). CHURN set in the
-  /// measure.
-  pure def decideStalledRetry(c: Core, j: int): Decision =
-    move(
-      withJob(c, j, { ...c.jobs.get(j), reason: RsNone }),
-      j, PPending, "stalled-retry", [])
 
   // ==========================================================================
   // === State + actions ======================================================
@@ -640,7 +724,7 @@ module chuggy_domain {
   // to model or to get wrong. (The open-human-task flag is derived too:
   // measure.qnt hasOpenHumanTask; PR 3's eval-stage index is derived from
   // the live set's kind marks: measure.qnt evalStage.) PR 2 extends them
-  // for free: an UNRELEASED dep (Draft/Frozen) is simply a dep that is not
+  // for free: an UNRELEASED dep (a Draft) is simply a dep that is not
   // Done, so it blocks with no new machinery; the pure bodies live with
   // the deciders (isReadyIn/isBlockedIn) so unit tests can pin exactly
   // that.
@@ -659,13 +743,12 @@ module chuggy_domain {
   /// transitively-doomed set; decideArrive's doc has the argument).
   val dependableJobs: Set[int] = liveJobs.filter(k => and {
     jobs.get(k).phase != PRevoked,
-    not(jobs.get(k).phase == PStalled and jobs.get(k).reason == RsDependencyRevoked)
+    not(jobs.get(k).phase == PEscalated and jobs.get(k).reason == RsDependencyRevoked)
   })
+  /// The only authoring phase (notes PR: Frozen removed), hence the only
+  /// releasable set — table line 21; the Frozen release row (line 26) died
+  /// with the phase (deviation recorded at decideRelease).
   val draftJobs: Set[int] = liveJobs.filter(j => jobs.get(j).phase == PDraft)
-  val frozenJobs: Set[int] = liveJobs.filter(j => jobs.get(j).phase == PFrozen)
-  /// Release is table-legal from BOTH authoring phases (table.qnt lines
-  /// 21-22 and 25-26).
-  val releasableJobs: Set[int] = draftJobs.union(frozenJobs)
   /// Every non-terminal may be revoked (table.qnt lines 45-48).
   val revocableJobs: Set[int] = liveJobs.filter(j => revocableIn(core, j))
   val readyJobs: Set[int] = liveJobs.filter(j => isReady(j))
@@ -678,28 +761,18 @@ module chuggy_domain {
     liveJobs.filter(j => jobs.get(j).phase == PEvaluating and runningCount(jobs.get(j).tasks) == 0)
   val landingJobs: Set[int] = liveJobs.filter(j => jobs.get(j).phase == PLanding)
   val doneJobs: Set[int] = liveJobs.filter(j => jobs.get(j).phase == PDone)
-  /// Stalls the operator may retry: the revalidation wall only — the
-  /// dependency_revoked wall is deliberately NOT retryable (see
-  /// stallRetryableIn for the table-line-44 deviation note).
-  val retryableStalled: Set[int] = liveJobs.filter(j => stallRetryableIn(core, j))
-
-  /// May the operator Retry this escalation? Under RetryCharged every
-  /// resume charges gas, so zero gas parks the job permanently (v1's
-  /// retryableEscalated corner, now for all resume points); under RetryFree
-  /// only the Working resume needs gas.
-  def retryable(j: int): bool =
-    jobs.get(j).phase == PEscalated and
-    match OP_RETRY_PRICING {
-      | RetryCharged => jobs.get(j).deadlineLeft > 0
-      | RetryFree => jobs.get(j).resumeAt == RWorking implies jobs.get(j).deadlineLeft > 0
-    }
-
-  val retryableEscalated: Set[int] = liveJobs.filter(j => retryable(j))
+  /// Parked jobs the operator may Retry (retryableIn: a modeled resume
+  /// exists and is affordable). Under RetryCharged a charging resume with
+  /// zero gas parks the job permanently (v1's retryableEscalated corner);
+  /// the pre-work RPending flavor is free, so a revalidation park is
+  /// always retryable; the dependency_revoked wall never is (resumeAt
+  /// RNone — its only exit is revoke).
+  val retryableEscalated: Set[int] = liveJobs.filter(j => retryableIn(core, j))
 
   /// No machine, operator, or author action can move anything. PR 2 shrank
   /// this dramatically: revoke is enabled on EVERY non-terminal (table
-  /// lines 47-48), so unretryable escalations, doomed Pending chains, and
-  /// parked stalls are all still actionable — the only true dead end is a
+  /// lines 47-48), so unretryable parks and doomed Pending chains are
+  /// all still actionable — the only true dead end is a
   /// fully-arrived fleet in which every job is settled in a terminal
   /// (Done or Revoked). The `settled` stutter covers exactly that state so
   /// runs never deadlock.
@@ -715,18 +788,19 @@ module chuggy_domain {
   /// the fleet one Draft at a time through the freshJob seam (deps still
   /// acyclic by construction: they may only point at already-arrived,
   /// strictly smaller ids).
-  /// The `DEADLINE >= 1` conjunct is the charter's REQUIRED-deadline row as
-  /// a validity condition: an instantiation without a deadline has NO
-  /// initial state — the graph is invalid, not merely unmetered (every
-  /// arrival funds a job from this grant, so checking it here still gates
-  /// every job ever created). PR 3 adds `MAX_STAGES >= 1`: a machine that
-  /// admits no well-formed eval program admits no jobs either.
+  /// The `GAS >= 1` conjunct is the charter's REQUIRED-deadline row (§2
+  /// economy/deadline — the account the notes PR renamed to gas) as a
+  /// validity condition: a gasless instantiation has NO initial state —
+  /// the graph is invalid, not merely unmetered (every arrival funds a
+  /// job from this grant, so checking it here still gates every job ever
+  /// created). PR 3 adds `MAX_STAGES >= 1`: a machine that admits no
+  /// well-formed eval program admits no jobs either.
   action init = all {
-    DEADLINE >= 1,       // charter §2 economy/deadline: required field
+    GAS >= 1,            // charter §2 economy/deadline: required, now named gas
     N_TASKS >= 1,        // well-formedness: a phase carries a real task set
     N_JOBS >= 1,         // the arrival bound must admit at least one job
     MAX_STAGES >= 1,     // PR 3: at least one authorable program must exist
-    REWORK_BUDGET >= 0,
+    reworkBudget(REWORK_POLICY) >= 0,
     gateBudget(GATE_PRICING) >= 0,
     jobs' = Map(),
     lastStep' = { label: "init", transitions: [], effects: [] },
@@ -752,28 +826,14 @@ module chuggy_domain {
     apply(decideArrive(core, deps_, prog))
   }
 
-  /// Author freezes a Draft (table line 22). Descends: rank 6 -> 5.
-  action freeze = all {
+  /// Author releases a Draft into the pipeline (table line 21;
+  /// Ready/Blocked re-derive). Descends: rank 5 -> 4. There is no freeze
+  /// or unfreeze action any more — the notes PR removed Frozen (deviation
+  /// recorded at decideRelease), so release is authoring's only
+  /// phase-level act after arrival.
+  action release = all {
     draftJobs.size() > 0,
     nondet j = draftJobs.oneOf()
-    apply(decideFreeze(core, j))
-  }
-
-  /// Author thaws a Frozen job to edit again (table line 24) — the
-  /// authoring loop; AUTHORING churn (climbs), which is exactly why
-  /// per-job liveness is conditional on authors eventually releasing or
-  /// revoking (measure.qnt header).
-  action unfreeze = all {
-    frozenJobs.size() > 0,
-    nondet j = frozenJobs.oneOf()
-    apply(decideUnfreeze(core, j))
-  }
-
-  /// Author releases a Draft or Frozen job into the pipeline (table lines
-  /// 21-22, 25-26); Ready/Blocked re-derive. Descends: rank {6,5} -> 4.
-  action release = all {
-    releasableJobs.size() > 0,
-    nondet j = releasableJobs.oneOf()
     apply(decideRelease(core, j))
   }
 
@@ -786,17 +846,21 @@ module chuggy_domain {
     apply(decideRevoke(core, j))
   }
 
-  /// Ready -> Working: nondet pick — scheduling/quota is trusted fabric
-  /// (charter §2 non-goals: no bespoke scheduler), so there is no slot
-  /// count and no queue order. Pending jobs have never spent gas (arrival
-  /// grants the full DEADLINE and the authoring phases charge nothing), so
-  /// gas >= 1 here whenever init accepted the configuration; the guard
-  /// keeps it structural.
+  /// Ready -> Working: THE AGENTIC DISPATCHER'S PICK (notes PR). The
+  /// nondet choice below IS the dispatcher — an agentic component whose
+  /// selection among Ready jobs is a real decision, not scheduler noise
+  /// (see decideDispatch's header for the full agency note); the recorded
+  /// `dispatch` step is its decision event in the golden trace.
+  /// Scheduling/quota below the pick stays trusted fabric (charter §2
+  /// non-goals: no bespoke scheduler) — no slot count, no queue order, no
+  /// fairness. Pending jobs have never spent gas (arrival grants the full
+  /// GAS and authoring charges nothing), so gas >= 1 here whenever init
+  /// accepted the configuration; the guard keeps it structural.
   action dispatch = all {
     readyJobs.size() > 0,
     nondet j = readyJobs.oneOf()
     all {
-      jobs.get(j).deadlineLeft > 0,
+      jobs.get(j).gasLeft > 0,
       apply(decideDispatch(core, j))
     }
   }
@@ -876,16 +940,12 @@ module chuggy_domain {
     apply(decideRevalFail(core, j))
   }
 
+  /// One resume action for every retryable park (notes PR: the pre-work
+  /// resume is a decideOpRetry flavor, not its own action).
   action opRetry = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
     apply(decideOpRetry(core, j))
-  }
-
-  action stalledRetry = all {
-    retryableStalled.size() > 0,
-    nondet j = retryableStalled.oneOf()
-    apply(decideStalledRetry(core, j))
   }
 
   /// The dead-end stutter (STUTTER set): keeps quiet states from
@@ -900,8 +960,6 @@ module chuggy_domain {
 
   action step = any {
     arrive,
-    freeze,
-    unfreeze,
     release,
     revoke,
     dispatch,
@@ -912,7 +970,6 @@ module chuggy_domain {
     landDuplicate,
     revalFail,
     opRetry,
-    stalledRetry,
     settle
   }
 
@@ -958,16 +1015,23 @@ module chuggy_domain {
     lastStep.transitions.foldl(true, (b, t) =>
       b and t.from != PDone and t.from != PRevoked)
 
-  /// The human desk is consistent: a named wall iff parked
-  /// (Escalated/Stalled), a resume point iff Escalated. (The open-task
-  /// flag needs no conjunct any more — it is DERIVED from the phase,
-  /// standing rule 3.) PR 2 note: PRevoked passes both iffs with
-  /// RsNone/RNone — "Revoked runs nothing" is this invariant plus
-  /// tasksWellFormed doing their existing jobs over the new phase.
+  /// The human desk is consistent. The reason-iff-parked half SURVIVES
+  /// the notes PR's Stalled merge verbatim in spirit: a named wall iff
+  /// parked — and parked now just IS PEscalated. The resumeAt half is
+  /// where the merge earned its keep: a resume point iff a MODELED RESUME
+  /// EXISTS — every wall stamps one (pipeline walls resume in-pipeline;
+  /// the pre-work revalidation wall resumes to Pending, RPending) EXCEPT
+  /// dependency_revoked, whose resumeAt stays RNone because its only
+  /// modeled exit is revoke (retryableIn). (The open-task flag needs no
+  /// conjunct — it is DERIVED from the phase, standing rule 3.) PR 2
+  /// note: PRevoked passes both iffs with RsNone/RNone — "Revoked runs
+  /// nothing" is this invariant plus tasksWellFormed doing their existing
+  /// jobs over the phase.
   val deskConsistent: bool = liveJobs.forall(j => and {
-    (jobs.get(j).phase == PEscalated or jobs.get(j).phase == PStalled)
-      iff (jobs.get(j).reason != RsNone),
-    (jobs.get(j).phase == PEscalated) iff (jobs.get(j).resumeAt != RNone)
+    (jobs.get(j).phase == PEscalated) iff (jobs.get(j).reason != RsNone),
+    (jobs.get(j).resumeAt != RNone) iff
+      (jobs.get(j).phase == PEscalated and
+       jobs.get(j).reason != RsDependencyRevoked)
   })
 
   /// The gate-budget wall exists only under Budgeted pricing (the wall
@@ -986,8 +1050,9 @@ module chuggy_domain {
   /// is priced by the MEASURE's stage digit, not by any account; only a
   /// stage FAILURE (the short-circuit into rework) spends.
   val accountsBounded: bool = liveJobs.forall(j => and {
-    jobs.get(j).deadlineLeft >= 0, jobs.get(j).deadlineLeft <= DEADLINE,
-    jobs.get(j).reworkLeft >= 0, jobs.get(j).reworkLeft <= REWORK_BUDGET,
+    jobs.get(j).gasLeft >= 0, jobs.get(j).gasLeft <= GAS,
+    jobs.get(j).reworkLeft >= 0,
+    jobs.get(j).reworkLeft <= reworkBudget(REWORK_POLICY),
     jobs.get(j).gateLeft >= 0, jobs.get(j).gateLeft <= gateBudget(GATE_PRICING)
   })
 
@@ -999,7 +1064,7 @@ module chuggy_domain {
   ///     exactly that stage's declared width (the interpreter is running
   ///     the program as written, not improvising);
   ///   - every other phase: empty — dead live-task state is never carried
-  ///     (derive-don't-store spirit; Draft/Frozen have not spawned,
+  ///     (derive-don't-store spirit; a Draft has not spawned,
   ///     PRevoked runs nothing).
   /// In the task phases the live ids are the contiguous run directly above
   /// the retired record (identity is sequential within the job — the
@@ -1008,17 +1073,17 @@ module chuggy_domain {
   /// can deliver).
   val tasksWellFormed: bool = liveJobs.forall(j =>
     val jb = jobs.get(j)
-    val start = jb.record.length() + 1
+    val start = jb.record.length() + firstTaskId
     if (jb.phase == PWorking) and {
       jb.tasks.size() == N_TASKS,
       jb.tasks.map(t => t.id) == start.to(start + N_TASKS - 1),
-      jb.tasks.forall(t => t.kind == TKWork and t.outcome != TCancelled)
+      jb.tasks.forall(t => t.kind == TKWork and t.state != TSResolved(TCancelled))
     } else if (jb.phase == PEvaluating)
       val s = evalStage(jb.tasks)
       and {
         s >= 0,
         s < jb.program.length(),
-        jb.tasks.forall(t => t.kind == TKEval(s) and t.outcome != TCancelled),
+        jb.tasks.forall(t => t.kind == TKEval(s) and t.state != TSResolved(TCancelled)),
         jb.tasks.size() == jb.program[s].fanout,
         jb.tasks.map(t => t.id) == start.to(start + jb.tasks.size() - 1)
       }
@@ -1027,14 +1092,17 @@ module chuggy_domain {
   /// THE RETAINED RECORD is well-formed (PR 3): entry i carries id i+1
   /// (the chronological log IS the identity order — chuggernaut spec.md
   /// §1.2, sequential within job, 1-indexed), nothing retired is still
-  /// running (retirement settles: TPassed/TFailed by verdict, TCancelled
-  /// by revoke), and every retired eval task names a stage its job's
-  /// program actually has (programs are immutable, so history never dangles).
+  /// running — the record is the RESOLVED log, every entry TSResolved
+  /// (TPassed/TFailed by verdict, TCancelled by revoke; the notes PR's
+  /// explicit lifecycle makes this a constructor check, not an
+  /// outcome-sentinel comparison) — and every retired eval task names a
+  /// stage its job's program actually has (programs are immutable, so
+  /// history never dangles).
   val recordWellFormed: bool = liveJobs.forall(j =>
     val jb = jobs.get(j)
     and {
-      jb.record.indices().forall(i => jb.record[i].id == i + 1),
-      jb.record.indices().forall(i => jb.record[i].outcome != TRunning),
+      jb.record.indices().forall(i => jb.record[i].id == i + firstTaskId),
+      jb.record.indices().forall(i => jb.record[i].state != TSRunning),
       jb.record.indices().forall(i =>
         match jb.record[i].kind {
           | TKWork => true
@@ -1115,7 +1183,6 @@ module chuggy_domain {
     range(1, liveJobs.size() + 1).foldl(Set(), (st, j) =>
       if (or {
         jobs.get(j).phase == PEscalated,
-        jobs.get(j).phase == PStalled,
         jobs.get(j).phase == PPending and jobs.get(j).deps.exists(d => st.contains(d))
       }) st.union(Set(j)) else st)
 
@@ -1126,9 +1193,9 @@ module chuggy_domain {
   /// PR 2 note: PRevoked contributes NOTHING here (hasOpenHumanTask
   /// excludes it), so a dependent of a revoked job can only be covered by
   /// its OWN task — which is exactly what the atomic cascade guarantees
-  /// (cascadeSafety below): parked dependents are PStalled, hence in
+  /// (cascadeSafety below): parked dependents are PEscalated, hence in
   /// stuckSet AND covered by themselves; the folds needed no change for
-  /// the new phases (Draft/Frozen are neither stuck — their progress is
+  /// the authoring phase (a Draft is neither stuck — its progress is
   /// the author's, the named AUTHORING conditionality — nor covering).
   val coveredSet: Set[int] =
     range(1, liveJobs.size() + 1).foldl(Set(), (cov, j) =>
@@ -1164,7 +1231,7 @@ module chuggy_domain {
 
   /// CASCADE SAFETY (deskVisibility's style, revoke's content): every job
   /// transitively stuck behind a Revoked dep is parked with its own open
-  /// human task (PStalled, wall dependency_revoked — hasOpenHumanTask
+  /// human task (PEscalated, wall dependency_revoked — hasOpenHumanTask
   /// derives the task) or is itself revoked (its author settled it too).
   /// The roadmap gate's "eventually parked" strengthens to ALWAYS-parked
   /// because the cascade is atomic with the revoke (decideRevoke): there
@@ -1178,7 +1245,7 @@ module chuggy_domain {
   /// end-to-end.
   val cascadeSafety: bool = revokeDoomed.forall(j => or {
     jobs.get(j).phase == PRevoked,
-    jobs.get(j).phase == PStalled and jobs.get(j).reason == RsDependencyRevoked
+    jobs.get(j).phase == PEscalated and jobs.get(j).reason == RsDependencyRevoked
   })
 
   // --- Measure descent (per-job liveness, sketched) -------------------------
@@ -1191,10 +1258,13 @@ module chuggy_domain {
   /// Descent half: every step strictly decreases sysMeasure EXCEPT the
   /// named STUTTER, CHURN, and AUTHORING sets (measure.qnt header) —
   /// checked by label against the ghost prevMeasure. Under the default
-  /// RetryCharged pricing the operator-retry exemption is empty: every
-  /// retry pays gas and MUST descend. PR 3 adds NO exemption: the stage
-  /// advance (eval-stage-passed) must strictly descend like any other
-  /// progress step — that is the stage digit earning its keep.
+  /// RetryCharged pricing the only churn is the pre-work resume (which
+  /// never charges — the notes PR folded the old stalled-retry in as an
+  /// operator-retry flavor, pricing intact); with Frozen gone there is no
+  /// unfreeze exemption any more, so release descends unconditionally.
+  /// PR 3 adds NO exemption: the stage advance (eval-stage-passed) must
+  /// strictly descend like any other progress step — that is the stage
+  /// digit earning its keep.
   val stepDescends: bool =
     val exempt = or {
       lastStep.label == "init",
@@ -1202,30 +1272,34 @@ module chuggy_domain {
       lastStep.label == "task-done-duplicate",
       lastStep.label == "land-duplicate",
       lastStep.label == "settled",
-      // CHURN: pre-work desk exit (nothing was ever spent).
-      lastStep.label == "stalled-retry",
-      // CHURN: free resumes exist only under RetryFree, and only into
-      // Evaluating/Landing (the Working resume always pays gas).
+      // CHURN: the uncharged operator-resume flavors (measure.qnt CHURN):
+      // the PRE-WORK resume (Escalated -> Pending; free under BOTH
+      // meterings — nothing was ever spent) and, under RetryFree only,
+      // the Evaluating/Landing resumes (the Working resume always pays).
       and {
         lastStep.label == "operator-retry",
-        OP_RETRY_PRICING == RetryFree,
-        lastStep.transitions.foldl(false, (b, t) => b or t.to != PWorking)
+        or {
+          lastStep.transitions.foldl(false, (b, t) => b or t.to == PPending),
+          and {
+            OP_RETRY_PRICING == RetryFree,
+            lastStep.transitions.foldl(false, (b, t) => b or t.to != PWorking)
+          }
+        }
       },
       // AUTHORING (PR 2, measure.qnt header): a job entering the fleet
       // climbs by its whole fresh measure (bounded by the N_JOBS arrival
-      // cap)...
+      // cap) — the set's ONLY climbing member since the notes PR removed
+      // the unfreeze edit loop with Frozen...
       lastStep.label == "job-arrived",
-      // ...the unfreeze edit loop climbs one rank (bounded only by author
-      // behavior — the named liveness conditionality)...
-      lastStep.label == "job-unfrozen",
       // ...and a desk-only revoke is flat: every transition leaves a
-      // rank-0 phase (Escalated/Stalled -> Revoked) and the cascade parked
-      // nobody. Any cascade park drags a rank>0 phase down, so the
-      // condition below then forces strict descent — freeze, release, and
-      // every live-rank revoke get NO exemption at all.
+      // settled-rank phase (Escalated -> Revoked) and the cascade parked
+      // nobody. Any cascade park drags a live-rank phase down, so the
+      // condition below then forces strict descent — release and every
+      // live-rank revoke get NO exemption at all.
       and {
         lastStep.label == "job-revoked",
-        lastStep.transitions.foldl(true, (b, t) => b and phaseRank(t.from) == 0)
+        lastStep.transitions.foldl(true, (b, t) =>
+          b and phaseRank(t.from) == rankSettled)
       }
     }
     exempt or currentMeasure < prevMeasure
@@ -1235,14 +1309,26 @@ module chuggy_domain {
   val measureDescends: bool = and { measureNonNegative, stepDescends }
 
   /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
-  /// operator-retry ever climbs the measure". EXPECTED TO BE VIOLATED on
-  /// the RetryFree instance (check.sh Stage 9's expected-violation run) —
-  /// the violation is the machine-level proof that free resumes really do
-  /// climb and really are exempted by stepDescends' CHURN arm, which no
+  /// operator-retry into a PIPELINE phase (Evaluating/Landing) ever climbs
+  /// the measure". EXPECTED TO BE VIOLATED on the RetryFree instance
+  /// (check.sh Stage 9's expected-violation run) — the violation is the
+  /// machine-level proof that free pipeline resumes really do climb and
+  /// really are exempted by stepDescends' RetryFree CHURN arm, which no
   /// green run could otherwise distinguish from dead code. Under
-  /// RetryCharged it must HOLD (every retry pays gas and descends).
+  /// RetryCharged it must HOLD (every pipeline resume pays gas and
+  /// descends). The witness deliberately EXCLUDES the pre-work RPending
+  /// resume (notes PR): that flavor is free and climbs under BOTH
+  /// meterings — the old stalled-retry churn, whose exemption arm the
+  /// unit tests pin (the climb is deterministic there) — so including it
+  /// would let a charged instance violate this witness without ever
+  /// exercising the RetryFree arm it exists to prove alive.
   val freeClimbNever: bool =
-    not(lastStep.label == "operator-retry" and currentMeasure > prevMeasure)
+    not(and {
+      lastStep.label == "operator-retry",
+      lastStep.transitions.foldl(false, (b, t) =>
+        b or t.to == PEvaluating or t.to == PLanding),
+      currentMeasure > prevMeasure
+    })
 
   /// ANTI-VACUITY WITNESS #2 (PR 2), not an invariant of the machine: "no
   /// revoke ever parks a dependent". EXPECTED TO BE VIOLATED (check.sh

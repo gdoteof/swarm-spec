@@ -20,15 +20,35 @@ traces ship from here as versioned artifacts.
 |---|---|---|
 | `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-ticket well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The machine was designed to fit this file. |
 | `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. |
-| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. |
+| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. |
 | `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark. |
+| `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). |
 
-Checked by `scripts/check.sh` Stage 9 (typecheck + unit tests + invariant
-simulation on all three instances + **four** expected-violation witnesses:
-the free-pipeline-resume climb, PR 2's cascade-reachability probe, PR 3's
-stage-advance-reachability probe, and the citations PR's carry-reachability
-probe — seed forensics for the notes PR and the citations PR recorded at
-each probe) and `just chuggy`.
+Checked by `scripts/check.sh` Stage 9 + 9b and `just chuggy`. **The
+two-layer witness policy** (Stage 9b, the witness-hardening PR — after the
+citations PR forced the fourth consecutive `freeClimbNever` seed re-pin):
+
+- **9b-DET, the deterministic layer — gates the build.** The four
+  machine-trace runs above (`quint test --main=<module>`): reachability of
+  each witnessed shape plus `allInvariants` along its whole trace, immune
+  to nondet drift, seeds nowhere. This layer guards **semantics** — if it
+  fails, the machine changed meaning (or a witness/invariant did).
+- **9b-RND, the random layer — warns, never gates.** The four pinned-seed
+  expected-violation probes (freeClimbNever / cascadeParkNever /
+  stageAdvanceNever / carryNever, seed forensics preserved at each probe)
+  answer what the deterministic layer cannot: does **random** exploration
+  of the current nondet surface still reach the shape at this seed/budget
+  (trace-space health)? A dead seed prints a loud WARNING with the re-pin
+  protocol instead of failing the build — a nondet-changing PR no longer
+  restarts the seed-hunt ritual under duress; re-pinning is maintenance,
+  on its own clock. Only genuine trace-space news warns (seed held, or
+  violation without its signature); a probe that **crashes** — malformed
+  invocation, no verdict at all — still hard-fails: harness bugs are not
+  dead seeds.
+
+Stage 9 proper is typecheck + unit tests + unseeded `allInvariants`
+simulation on all **four** instances (the citations instance's unseeded run
+replaced the coverage that used to ride its removed pinned twin).
 
 ## The notes-reconciliation PR — what each note changed here
 
@@ -234,9 +254,12 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
   STUTTER/CHURN/AUTHORING sets strictly decreases a nonnegative measure
   (`measureDescends`) — including the stage advance, which gets **no
   exemption**. Under the default `RetryCharged` metering the churn set is
-  the free pre-work resume alone. All three non-descending exemptions are
-  proved non-vacuous by Stage 9/9b's expected-violation witnesses
-  (`freeClimbNever`, `cascadeParkNever`, `stageAdvanceNever`).
+  the free pre-work resume alone. The non-descending exemptions are proved
+  non-vacuous by Stage 9b's witnesses (`freeClimbNever`,
+  `cascadeParkNever`, `stageAdvanceNever`, `carryNever`) — since the
+  witness-hardening PR, each as a seed-free deterministic machine trace
+  (`tests/chuggy_witness_test.qnt`, the gating layer) with the pinned-seed
+  random probes demoted to warn-only trace-space health checks.
 - **Authoring lifecycle** (PR 2, reshaped by the notes): tickets arrive as
   Drafts (the fleet starts empty) carrying their eval program, and release
   strictly descends straight into the pipeline — freeze/unfreeze are gone
@@ -276,7 +299,7 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 | Scheduler, agent-slot count, FIFO ready queue | **Non-goal** (charter §2). Dispatch is the agentic dispatcher's unrestricted nondet pick among Ready tickets — modeled as its decision, not as a queue (notes PR). |
 | Token/API spend | **Never** a model variable (charter §2 currency row; chuggernaut's per-task `token_usage` stays implementation accounting). |
 | Multi-tenancy, dynamic DAGs, cross-cluster | In scope by silence (charter §3) but admitted in **no** PR yet. Programs are authored at arrival, and no ticket-event decider creates tickets or rewrites programs. |
-| Apalache verification, seeded witness batteries, golden-trace projection for chuggy | Harness depth, not machine shape: the gate is typecheck + unit tests + invariant simulation (+ three expected-violation witnesses). The v1-style verify/witness/projection stages follow once the trace consumer (chuggy CI) exists. |
+| Apalache verification, golden-trace projection for chuggy | Harness depth, not machine shape: the gate is typecheck + unit tests + invariant simulation + the two-layer witness checking above (deterministic traces gate; pinned-seed probes warn). The v1-style verify/projection stages follow once the trace consumer (chuggy CI) exists. |
 
 ## Relation to v1 (`specs/chuggernaut/`)
 

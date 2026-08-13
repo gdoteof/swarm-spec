@@ -62,31 +62,40 @@ conformance:
 itf-golden:
     bash scripts/gen-candidates.sh
 
-# Chuggy-model PRs 1-3 + notes + citations (docs/chuggy-charter.md;
-# specs/chuggy/): typecheck + unit tests + invariant simulation on all three
-# instances (both GatePricing branches + RetryFree). PR 2's authoring
+# Chuggy-model PRs 1-3 + notes + citations + witness hardening
+# (docs/chuggy-charter.md; specs/chuggy/): typecheck + unit tests +
+# invariant simulation on all four instances (both GatePricing branches,
+# RetryFree, and the citations probe instance). PR 2's authoring
 # lifecycle rides the same runs (empty fleet, tickets arrive as Drafts,
 # revoke-cascade gate invariants); PR 3's task-records depth rides them
 # again with PROGRAMS ENABLED (MAX_STAGES = 2: nondet authored eval
 # programs, retained task records, recordWellFormed/recordMonotone/
 # programsWellFormed in allInvariants); the citations PR rides them with
 # CITATIONS ENABLED (N_REGIONS = 2: nondet footprints on completions,
-# scoped rework respawns, citationsWellFormed in allInvariants).
-# This is check.sh Stage 9 minus its four expected-violation witnesses
-# (free-retry climb, cascade park, stage advance, carry), which need bash
-# logic — run `just check` for the full gate.
+# scoped rework respawns, citationsWellFormed in allInvariants). The
+# witness-hardening PR adds the DETERMINISTIC witness layer (check.sh
+# Stage 9b-DET): four seed-free machine traces, one per witnessed shape
+# (free-retry climb, cascade park, stage advance, carry), each asserting
+# allInvariants at every step — these subsumed the two pinned
+# allInvariants runs that used to sit at the end of this recipe.
+# This is check.sh Stage 9 + 9b-DET minus 9b-RND, the DEMOTED random
+# pinned-seed probes (warn-only trace-space health, bash logic) — run
+# `just check` for the full gate.
 chuggy:
     npx quint typecheck specs/chuggy/measure.qnt
     npx quint typecheck specs/chuggy/domain.qnt
     npx quint typecheck specs/chuggy/mc/mc_chuggy.qnt
     npx quint typecheck specs/chuggy/tests/chuggy_test.qnt
+    npx quint typecheck specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test specs/chuggy/tests/chuggy_test.qnt
+    npx quint test --main=chuggy_witness_free_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_cascade_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_stage_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_carry_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=2000 --max-steps=40
-    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=50000 --max-steps=40 --seed=0xcfadb0ec5ca34c85 --backend=rust
-    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=20000 --max-steps=40 --seed=0xd21f881a768a43bc --backend=rust
 
 # Full check pipeline (what CI runs), Stages 1-9.
 check:

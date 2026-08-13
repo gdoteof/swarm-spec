@@ -249,7 +249,7 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PRs 1-4 + notes-reconciliation + citations (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-5 + notes-reconciliation + citations (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
@@ -309,6 +309,23 @@ echo "=== Stage 9: chuggy-model PRs 1-4 + notes-reconciliation + citations (type
 # nondet structure YET AGAIN, so every 9b-RND seed was re-examined:
 # cascadeParkNever and stageAdvanceNever SURVIVED; freeClimbNever and
 # carryNever died and were re-pinned — forensics at each probe.
+# The MERGE-QUEUE + LANDING PR (roadmap PR 5 — deliberately last; its
+# gate, landing/requirements, was NEVER ANSWERED, so the requirements it
+# serves are PROPOSED-pending-confirmation: specs/chuggy/README.md) rides
+# the same runs with the LANDING RESTRUCTURED: eval-passed enqueues
+# (PLanding), the dequeue draws branchMoved — quiet fast-paths the direct
+# SquashMerge in one step, moved opens the repo's depth-1 gate (PGated) —
+# and the gated resolution draws from landOutcomes(true) = AdvanceDefault
+# or the priced eviction (the §5e path rule as machine structure); absorb
+# joined the any{} roster (Batched re-sited: PPending -> PBatched, the
+# grouping whose lead's single landing fans out member completions).
+# allInvariants gained gatedPromotesDirectSquashes, gateDepthOne, and
+# batchWellFormed (landingExclusive/landingIsolation extended in place),
+# and 9b-DET gained THREE deterministic modules (depth-1 guard-refusal +
+# both success effects on one trace; the DeadlineOnly eviction walking
+# v1's §5a loop into the gas wall; the batch fan-out + dissolution). The
+# restructured draws changed the nondet surface YET AGAIN, so every
+# 9b-RND seed was re-examined — forensics at each probe.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -341,7 +358,7 @@ echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + ran
 # allInvariants along their traces — survive every future nondet drift
 # without a seed hunt.
 #
-# 9b-DET — the LOAD-BEARING layer: five deterministic machine-trace
+# 9b-DET — the LOAD-BEARING layer: eight deterministic machine-trace
 # modules (specs/chuggy/tests/chuggy_witness_test.qnt; mechanism note in
 # its header — `init.then(apply(decide*))` with guard-checked drivers, so
 # every accepted trace is a trace of `step`). Each run proves its shape
@@ -358,10 +375,27 @@ echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + ran
 # to the ticket's own repo; the repo pick off-default with a cross-repo
 # dep unblock) — and has NO paired random probe: landing attempts are
 # dense in random exploration, so the unseeded Stage 9 runs are its
-# random side.
+# random side. The MERGE-QUEUE PR (PR 5) added modules six through
+# eight, per the same convention (new nondet surface -> deterministic
+# runs on both branches first): the gate module pins the DEPTH-1
+# GUARD-REFUSAL mid-trace (a second same-repo dequeue disabled while the
+# slot is held, enabled the step it frees), BOTH success effects on
+# one trace — gated AdvanceDefault, quiet fast-path SquashMerge (the
+# §5e path rule witnessed) — and the QUIET FAST-PATH as its own
+# witnessed run against the hoisted routing decider decideDequeue
+# (adversarial-review MAJOR 1: the p3 routing-mutant catcher); the deadline-only module walks the eviction
+# on the OTHER GatePricing branch (two gas-only gate failures into the
+# gas wall — v1's §5a loop shape with the backstop doing its job); the
+# batch module fires the ticket-batched BATCHING climb (the stepDescends
+# convention roster), absorbs from Ready AND Blocked (the note's both
+# flavors), pins the dep union gating the lead, the completion fan-out
+# (member's dependent Ready in the same post-state), and the
+# dissolution. None has a paired random probe (absorb pairs and landing
+# attempts are dense; the unseeded Stage 9 runs are the random side).
 for m in chuggy_witness_free_test chuggy_witness_cascade_test \
          chuggy_witness_stage_test chuggy_witness_carry_test \
-         chuggy_witness_multirepo_test; do
+         chuggy_witness_multirepo_test chuggy_witness_gate_test \
+         chuggy_witness_gate_deadline_test chuggy_witness_batch_test; do
   echo "--- quint test --main=$m specs/chuggy/tests/chuggy_witness_test.qnt"
   npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
 done
@@ -432,6 +466,12 @@ warn_probe() {
 # ~30s). The new seed was found unseeded within ~3.6M samples (~3m31s,
 # rust backend) and reproduces the violation on its first trace (43ms),
 # with the operator-retry pipeline-resume signature in the trace.)
+# (Merge-queue-PR forensics: re-examined against the restructured landing
+# surface — land split into gateEnter (branchMoved draw; quiet fast-path)
+# + gateResolve (the gated outcome draw) and the absorb pair draw joining
+# the any{} roster. The multi-repo seed SURVIVED its first re-examination:
+# still violates within its 50k budget (~28s, rust backend) with the
+# operator-retry pipeline-resume signature; deliberately NOT re-pinned.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
   --max-samples=50000 --max-steps=40 --seed=0x8095f27f767afa07 --backend=rust 2>&1); then
@@ -470,7 +510,10 @@ fi
 # deliberately NOT re-pinned.) (Multi-repo-PR forensics: re-examined
 # against the repo-draw + branchMoved nondet shifts — SURVIVED a third
 # time: violates within its budget (45ms) with both signature greps hit;
-# deliberately NOT re-pinned.)
+# deliberately NOT re-pinned.) (Merge-queue-PR forensics: re-examined
+# against the gateEnter/gateResolve/absorb restructuring — SURVIVED a
+# fourth time: violates within its budget (49ms) with both signature
+# greps hit; deliberately NOT re-pinned.)
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=cascadeParkNever \
   --max-samples=20000 --max-steps=40 --seed=0x5cea1f53f74a0e4e --backend=rust 2>&1); then
@@ -510,7 +553,11 @@ fi
 # eval-stage-passed signature; deliberately NOT re-pinned. Multi-repo-PR
 # forensics: re-examined against the repo-draw + branchMoved shifts —
 # SURVIVED a third time: violates within its budget (646ms) with the
-# eval-stage-passed signature; deliberately NOT re-pinned.)
+# eval-stage-passed signature; deliberately NOT re-pinned. Merge-queue-PR
+# forensics: re-examined against the gateEnter/gateResolve/absorb
+# restructuring — SURVIVED a fourth time: violates within its budget
+# (342ms) with the eval-stage-passed signature; deliberately NOT
+# re-pinned.)
 if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=stageAdvanceNever \
   --max-samples=20000 --max-steps=40 --seed=0x9180927e576bcf85 --backend=rust 2>&1); then
@@ -562,11 +609,24 @@ fi
 # diluted failure draw) and reproduces the violation on its first trace
 # (96ms), with both the CarryEvalVerdicts effect and a TSCarried live
 # task in the trace.)
+# (Re-pinned AGAIN for the merge-queue PR — this probe's second re-pin,
+# warn-only regime: the probe's gate-rework choreography now needs TWO
+# consecutive right draws where it needed one — the dequeue must draw
+# MOVED (gateEnter) and the gated resolution must draw LandFailed
+# (gateResolve) — and the absorb pair draw joined the any{} roster,
+# shifting every trace with >= 2 Pending same-repo tickets. The
+# multi-repo seed 0xd1eb524283a15d73 was verified GENUINELY DEAD before
+# re-pinning: its full 20k-sample budget ran to completion with no
+# violation ([ok], ~10s). The new seed was found unseeded within ~8.8M
+# samples (~4m56s, rust backend — rarer than the multi-repo-era ~1.95M
+# find, consistent with the split landing draw) and reproduces the
+# violation on its first trace (51ms), with both the CarryEvalVerdicts
+# effect and a TSCarried task in the trace.)
 if carry_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
   --invariant=carryNever \
-  --max-samples=20000 --max-steps=40 --seed=0xd1eb524283a15d73 --backend=rust 2>&1); then
+  --max-samples=20000 --max-steps=40 --seed=0x698d28b35e3233fb --backend=rust 2>&1); then
   if echo "$carry_out" | grep -q '\[ok\]'; then
-    warn_probe carryNever "seed 0xd1eb524283a15d73 no longer reaches a carry ([ok] over its 20k budget)"
+    warn_probe carryNever "seed 0x698d28b35e3233fb no longer reaches a carry ([ok] over its 20k budget)"
   else
     echo "FAIL: carryNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
     echo "$carry_out" | tail -5 >&2

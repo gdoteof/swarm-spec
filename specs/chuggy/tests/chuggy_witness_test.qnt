@@ -60,7 +60,7 @@
 /// module, so instances cannot share a module); each module's consts are
 /// byte-identical to the mc/mc_chuggy.qnt instance the random layer samples,
 /// so the deterministic trace speaks about the same machine. check.sh Stage
-/// 9b runs all five via `quint test --main=<module>`; `just chuggy` mirrors.
+/// 9b runs all eight via `quint test --main=<module>`; `just chuggy` mirrors.
 ///
 /// THE MULTI-REPO PR (roadmap PR 4) extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored repo pick
@@ -70,14 +70,51 @@
 /// rework and the landing wall attributed; pinned QUIET with the landing
 /// succeeding; and the repo pick exercised off-default with a cross-repo
 /// dep chain unblocking). The existing four modules updated mechanically:
-/// arrivals author repo 1, and every doLand names its branchMoved choice
-/// with the outcome guarded by the machine's own landOutcomes draw rule
-/// (a quiet failure is not drawable — the drivers reference the same
-/// definition the `land` action draws from, per the guard discipline
+/// arrivals author repo 1, and every landing driver names its branchMoved
+/// choice with the outcome guarded by the machine's own landOutcomes draw
+/// rule (a quiet failure is not drawable — the drivers reference the same
+/// definition the landing actions draw from, per the guard discipline
 /// above). The fifth module has NO paired random probe: its shapes are
 /// exercised by every unseeded allInvariants run (landing attempts are
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
+///
+/// THE MERGE-QUEUE + LANDING PR (roadmap PR 5) extends this layer first,
+/// per the convention: the landing surface RESTRUCTURED (the old one-step
+/// `land` became the dequeue `gateEnter` — quiet arm fast-pathing the
+/// direct SquashMerge, moved arm opening the depth-1 gate — plus the gated
+/// `gateResolve` drawing from landOutcomes(true)), so every landing driver
+/// here became the doDequeue/doGateResolve pair, referencing
+/// gateEnterableIn / gatedTickets / landOutcomes — and, per the
+/// adversarial review's MAJOR 1, doDequeue applies the HOISTED routing
+/// decider decideDequeue rather than re-composing the quiet/moved route
+/// inline (a copied route drifts exactly like a copied guard: the p3
+/// mutant re-routed quiet into the gate and shipped green against the
+/// drivers' copy; decideDequeue's header has the story). Nothing copied.
+/// Three NEW modules carry the PR's witness half:
+///   - chuggy_witness_gate_test (budgeted consts): DEPTH-1 EXCLUSIVITY as
+///     a guard-refusal pinned mid-trace (the second same-repo ticket's
+///     dequeue REFUSED while the slot is held, enabled again the step the
+///     slot frees) and BOTH success effects on one machine trace — the
+///     gated AdvanceDefault, then the quiet fast-path SquashMerge (the
+///     §5e path rule, R3, witnessed) — plus the QUIET FAST-PATH as its
+///     own witnessed run (SquashMerge reachability pinned against the
+///     hoisted routing decider, the p3-mutant catcher);
+///   - chuggy_witness_gate_deadline_test (deadline-only consts): the
+///     eviction priced on the OTHER GatePricing branch — two gate
+///     failures metered by gas alone (gateLeft identically 0) into the
+///     gas wall, v1's §5a gate-loop shape reproduced on chuggy's machine
+///     with the deadline backstop doing exactly its job (R5);
+///   - chuggy_witness_batch_test (budgeted consts): the BATCHING climb
+///     (the stepDescends convention roster's ticket-batched arm — absorb
+///     from Ready AND from Blocked, the note's both flavors), the dep
+///     UNION gating the lead on a machine trace, the completion FAN-OUT
+///     (one landing effect completes the member, its dependent deriving
+///     Ready in the same post-state), and the DISSOLUTION on lead revoke
+///     (ReleaseMember, re-batchable) (R2/R7).
+/// Like the multi-repo module, none has a paired random probe: absorb
+/// pairs and landing attempts are dense in random exploration; the unseeded
+/// Stage 9 runs are the random side.
 
 /// SHAPE 1 — THE FREE CLIMB (freeClimbNever, mc_chuggy_retryfree consts).
 /// A ticket burns both accounts down to gas 0, parks on the desk from a
@@ -426,10 +463,14 @@ module chuggy_witness_stage_test {
     reducibleEval.contains(j),
     apply(decideEvalStageReduce(core, j))
   }
-  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
-    landingTickets.contains(j),
-    landOutcomes(moved).contains(out),
-    apply(decideLand(core, j, out, moved))
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+  action doGateResolve(j: int, out: LandOutcome): bool = all {
+    gatedTickets.contains(j),
+    landOutcomes(true).contains(out),
+    apply(decideLand(core, j, out, true))
   }
   action doLandDuplicate(j: int): bool = all {
     doneTickets.contains(j),
@@ -492,9 +533,13 @@ module chuggy_witness_stage_test {
         tickets.get(1).phase == PLanding,
         allInvariants
       })
-      .then(doLand(1, LandSquashMerge, false))
+      // The dequeue draws QUIET: the skip fast-path — gate never opened,
+      // the direct squash resolves the landing in one step (the path
+      // rule's quiet arm; the gated arm is the gate module's).
+      .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
+        lastStep.effects == ["SquashMerge"],
         tickets.get(1).landings == 1,
         allInvariants
       })
@@ -567,10 +612,14 @@ module chuggy_witness_carry_test {
     reducibleEval.contains(j),
     apply(decideEvalStageReduce(core, j))
   }
-  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
-    landingTickets.contains(j),
-    landOutcomes(moved).contains(out),
-    apply(decideLand(core, j, out, moved))
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+  action doGateResolve(j: int, out: LandOutcome): bool = all {
+    gatedTickets.contains(j),
+    landOutcomes(true).contains(out),
+    apply(decideLand(core, j, out, true))
   }
 
   /// The only authorable program at these bounds (N_TASKS = 1,
@@ -601,12 +650,21 @@ module chuggy_witness_carry_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // The landing fails: Budgeted(1) buys exactly one gate rework
-      // (gate 1 -> 0, gas 2 -> 1); work id 3 spawns.
-      .then(doLand(1, LandFailed, true))
+      // The dequeue draws MOVED: the gate opens (merge-queue PR — the
+      // depth-1 slot held while the candidate is validated).
+      .then(doDequeue(1, true))
+      .expect(and {
+        lastStep.label == "gate-opened",
+        tickets.get(1).phase == PGated,
+        allInvariants
+      })
+      // The gate fails: Budgeted(1) buys exactly one gate rework
+      // (gate 1 -> 0, gas 2 -> 1); work id 3 spawns; the slot frees.
+      .then(doGateResolve(1, LandFailed))
       .expect(and {
         lastStep.label == "rework-started gate_failure",
         tickets.get(1).gateLeft == 0,
+        gateFreeIn(core, 1),
         allInvariants
       })
       // The gate fix touches ONLY region 1 — disjoint from the retained
@@ -639,9 +697,12 @@ module chuggy_witness_carry_test {
         tickets.get(1).phase == PLanding,
         allInvariants
       })
-      .then(doLand(1, LandAdvanceDefault, false))
+      // Quiet dequeue: the fast-path direct squash (the only quiet
+      // outcome — the path rule).
+      .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
+        lastStep.effects == ["SquashMerge"],
         tickets.get(1).landings == 1,
         // The carry mark survives into the retained record, citation
         // intact — the replay vocabulary.
@@ -682,7 +743,9 @@ module chuggy_witness_carry_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doLand(1, LandFailed, true))
+      .then(doDequeue(1, true))
+      .expect(allInvariants)
+      .then(doGateResolve(1, LandFailed))
       .expect(allInvariants)
       .then(doTaskDone(1, 3, VPass, Set(1)))       // ...and the gate fix touches region 1
       .expect(allInvariants)
@@ -696,12 +759,13 @@ module chuggy_witness_carry_test {
         tickets.get(1).tasks == Set({ id: 4, kind: TKEval(0), state: TSRunning, cited: Set() }),
         allInvariants
       })
-      // The rerun re-earns the verdict and the ticket still lands.
+      // The rerun re-earns the verdict and the ticket still lands (quiet
+      // fast-path: the direct squash).
       .then(doTaskDone(1, 4, VPass, Set(1)))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doLand(1, LandAdvanceDefault, false))
+      .then(doDequeue(1, false))
       .expect(and { tickets.get(1).landings == 1, allInvariants })
 }
 
@@ -775,10 +839,14 @@ module chuggy_witness_multirepo_test {
     reducibleEval.contains(j),
     apply(decideEvalStageReduce(core, j))
   }
-  action doLand(j: int, out: LandOutcome, moved: bool): bool = all {
-    landingTickets.contains(j),
-    landOutcomes(moved).contains(out),
-    apply(decideLand(core, j, out, moved))
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+  action doGateResolve(j: int, out: LandOutcome): bool = all {
+    gatedTickets.contains(j),
+    landOutcomes(true).contains(out),
+    apply(decideLand(core, j, out, true))
   }
 
   /// Single-stage single-evaluator program: these shapes need the landing
@@ -809,9 +877,10 @@ module chuggy_witness_multirepo_test {
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // THE WITNESSED STEP: the attempt's branchMoved choice is QUIET —
-      // the landing succeeds and the step is attributed to the ticket's
-      // own repo with the quiet cause on record.
-      .then(doLand(1, LandSquashMerge, false))
+      // the dequeue fast-paths (the gate never opens), the landing
+      // succeeds, and the step is attributed to the ticket's own repo
+      // with the quiet cause on record.
+      .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["SquashMerge"],
@@ -844,15 +913,25 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // THE WITNESSED STEP (rework half): the branch MOVED and the
-      // landing failed — Budgeted(1) buys one gate rework (gate 1 -> 0,
-      // gas 2 -> 1; work ids 4, 5), and the step carries the attribution.
-      .then(doLand(1, LandFailed, true))
+      // The branch MOVED at the dequeue: the gate opens and holds repo
+      // 1's depth-1 slot.
+      .then(doDequeue(1, true))
+      .expect(and {
+        lastStep.label == "gate-opened",
+        tickets.get(1).phase == PGated,
+        not(gateFreeIn(core, 1)),
+        allInvariants
+      })
+      // THE WITNESSED STEP (rework half): the gate failed — Budgeted(1)
+      // buys one gate rework (gate 1 -> 0, gas 2 -> 1; work ids 4, 5),
+      // the step carries the attribution, and the slot frees by phase.
+      .then(doGateResolve(1, LandFailed))
       .expect(and {
         lastStep.label == "rework-started gate_failure",
         lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
         tickets.get(1).gateLeft == 0,
         tickets.get(1).gasLeft == 1,
+        gateFreeIn(core, 1),
         allInvariants
       })
       .then(doTaskDone(1, 4, VPass, Set()))
@@ -866,10 +945,13 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // THE WITNESSED STEP (wall half): the branch moved AGAIN with the
-      // gate account empty — the ticket parks at the gate-budget wall,
-      // and the PARKING step is attributed like the rework was.
-      .then(doLand(1, LandFailed, true))
+      // The branch moved AGAIN at the re-dequeue: the gate re-opens...
+      .then(doDequeue(1, true))
+      .expect(and { tickets.get(1).phase == PGated, allInvariants })
+      // THE WITNESSED STEP (wall half): ...and fails with the gate
+      // account empty — the ticket parks at the gate-budget wall, and the
+      // PARKING step is attributed like the rework was.
+      .then(doGateResolve(1, LandFailed))
       .expect(and {
         lastStep.label == "ticket-escalated gate_budget_exhausted",
         lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
@@ -916,13 +998,18 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // THE WITNESSED STEP: repo 1 lands (moved branch, clean integration
-      // anyway — the move makes failure possible, not certain) and the
-      // repo-2 dependent derives READY in the same post-state: the
-      // cross-repo unblock, no machinery, no repo consulted.
-      .then(doLand(1, LandAdvanceDefault, true))
+      // The branch moved: repo 1's gate opens for the candidate.
+      .then(doDequeue(1, true))
+      .expect(and { tickets.get(1).phase == PGated, allInvariants })
+      // THE WITNESSED STEP: repo 1 lands out of the gate (moved branch,
+      // clean integration anyway — the move makes failure possible, not
+      // certain; the gated promotion is AdvanceDefault, the path rule)
+      // and the repo-2 dependent derives READY in the same post-state:
+      // the cross-repo unblock, no machinery, no repo consulted.
+      .then(doGateResolve(1, LandAdvanceDefault))
       .expect(and {
         lastStep.label == "ticket-done",
+        lastStep.effects == ["AdvanceDefault"],
         lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
         tickets.get(1).phase == PDone,
         isReady(2),                                // THE cross-repo unblock
@@ -940,15 +1027,544 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(allInvariants)
-      // The dependent lands in ITS repo, quiet, attributed to repo 2 —
-      // two repos, two landings, each on its own record.
-      .then(doLand(2, LandSquashMerge, false))
+      // The dependent lands in ITS repo, quiet (the fast-path direct
+      // squash), attributed to repo 2 — two repos, two landings, each on
+      // its own record.
+      .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.landing == LOAttempt({ repo: 2, branchMoved: false }),
         tickets.get(2).phase == PDone,
         tickets.get(1).landings == 1,
         tickets.get(2).landings == 1,
+        allInvariants
+      })
+}
+
+/// SHAPE 6 — THE DEPTH-1 GATE (merge-queue PR, R3/R4; mc_chuggy_budgeted
+/// consts). Two same-repo tickets both enqueue; the first dequeue draws
+/// MOVED and occupies the gate — and the second ticket's dequeue is
+/// REFUSED BY GUARD while the slot is held (gateEnterableIn false: the
+/// depth-1 exclusivity as a pinned guard-refusal, not just an invariant
+/// over states that happened to occur). The occupant resolves as the GATED
+/// promotion (AdvanceDefault — the default ref advanced onto the validated
+/// candidate), the slot frees BY PHASE in the same step, and the second
+/// ticket dequeues QUIET into the fast-path direct squash (SquashMerge) —
+/// BOTH success effects distinguished on one machine trace, each from its
+/// own path: the §5e divergence as a theorem, witnessed. The SECOND run
+/// (adversarial review, MAJOR 1) is the QUIET FAST-PATH as its own named
+/// witnessed shape — SquashMerge reachability through decideDequeue's
+/// quiet branch on a solo trace where the gate NEVER opens: the
+/// deterministic catcher for a routing mutant (quiet re-routed into the
+/// gate), which the pre-hoisting inline composition let ship green
+/// through every layer because the drivers carried a copy of the route.
+module chuggy_witness_gate_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 3,
+    N_TASKS = 2,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    GATE_PRICING = Budgeted(1),
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 2,
+    N_REGIONS = 2,
+    N_REPOS = 2
+  ).* from "../domain"
+
+  // --- Deterministic drivers (file header; only the ones this shape uses).
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+  action doDispatch(j: int): bool = all {
+    dispatchableIn(core, j),
+    apply(decideDispatch(core, j))
+  }
+  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+    taskPhaseTickets.contains(j),
+    deliverableTaskIds(core, j).contains(tid),
+    cited_.subseteq(regions),
+    apply(decideTaskDone(core, j, tid, v, cited_))
+  }
+  action doWorkReduce(j: int): bool = all {
+    reducibleWork.contains(j),
+    apply(decideWorkReduce(core, j))
+  }
+  action doEvalReduce(j: int): bool = all {
+    reducibleEval.contains(j),
+    apply(decideEvalStageReduce(core, j))
+  }
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+  action doGateResolve(j: int, out: LandOutcome): bool = all {
+    gatedTickets.contains(j),
+    landOutcomes(true).contains(out),
+    apply(decideLand(core, j, out, true))
+  }
+
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  run gateDepthOneDeterministicTest =
+    init
+      // Two same-repo tickets, walked to the landing queue one after the
+      // other (each: dispatch gas 3 -> 2, work ids 1-2, eval id 3).
+      .then(doArrive(Set(), progFlat1, 1))
+      .expect(allInvariants)
+      .then(doArrive(Set(), progFlat1, 1))
+      .expect(allInvariants)
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doRelease(2))
+      .expect(allInvariants)
+      .then(doDispatch(1))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      .then(doDispatch(2))
+      .expect(allInvariants)
+      .then(doTaskDone(2, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(2, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(2))
+      .expect(allInvariants)
+      .then(doTaskDone(2, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(2))
+      .expect(and {
+        // Both enqueued, the gate free: EITHER may dequeue (order is
+        // deliberately unmodeled — the nondet pick).
+        landingTickets == Set(1, 2),
+        gateEnterableIn(core, 1),
+        gateEnterableIn(core, 2),
+        allInvariants
+      })
+      // Ticket 1 dequeues MOVED: the gate opens and holds repo 1's slot.
+      .then(doDequeue(1, true))
+      .expect(and {
+        lastStep.label == "gate-opened",
+        tickets.get(1).phase == PGated,
+        // THE WITNESSED REFUSAL (R4): while the slot is held, the second
+        // same-repo ticket CANNOT draw the dequeue — including its
+        // would-be-quiet fast-path (quietness is only checked AT the
+        // dequeue, chuggernaut §3.3: each dequeued job re-checks the
+        // fast-path). A doDequeue(2, _) here would disable the run.
+        not(gateEnterableIn(core, 2)),
+        gateEnterable == Set(),
+        not(gateFreeIn(core, 1)),
+        allInvariants                          // carries gateDepthOne
+      })
+      // THE GATED PROMOTION (R3, one half): the validated candidate
+      // advances the default ref — and the slot frees by phase, so the
+      // refusal lifts in the same post-state.
+      .then(doGateResolve(1, LandAdvanceDefault))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.effects == ["AdvanceDefault"],
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).landings == 1,
+        gateFreeIn(core, 1),
+        gateEnterableIn(core, 2),                // the queue moves on
+        allInvariants
+      })
+      // THE FAST-PATH (R3, the other half): ticket 2 dequeues QUIET —
+      // the gate is skipped and the direct squash lands in one step.
+      // Both success effects now stand on this one trace, each from its
+      // own path.
+      .then(doDequeue(2, false))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.effects == ["SquashMerge"],
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: false }),
+        tickets.get(2).landings == 1,
+        allInvariants
+      })
+
+  /// THE QUIET FAST-PATH, witnessed as its own shape (adversarial review,
+  /// MAJOR 1 — SquashMerge reachability pinned against the ROUTING rule):
+  /// a solo ticket walked to the queue and dequeued QUIET resolves its
+  /// landing IN THE DEQUEUE STEP — ticket-done, the direct squash, quiet
+  /// attribution, and the gate NEVER opens anywhere on the trace. A
+  /// decideDequeue mutant that re-routed quiet into the gate (the
+  /// review's p3, which the pre-hoisting composition let ship green)
+  /// leaves the ticket PGated at the witnessed step and fails every
+  /// conjunct below; the driver references decideDequeue itself, so there
+  /// is no copy of the route left to drift.
+  run quietFastPathDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))
+      .expect(allInvariants)
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // eval id 3
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and {
+        lastStep.label == "eval-passed",
+        tickets.get(1).phase == PLanding,
+        gateFreeIn(core, 1),
+        allInvariants
+      })
+      // THE WITNESSED STEP: quiet dequeue = same-step landing.
+      .then(doDequeue(1, false))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.effects == ["SquashMerge"],
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: false }),
+        lastStep.transitions == [{ ticket: 1, from: PLanding, to: PDone }],
+        tickets.get(1).phase == PDone,
+        tickets.get(1).landings == 1,
+        gateFreeIn(core, 1),                       // the gate never opened
+        allInvariants
+      })
+}
+
+/// SHAPE 7 — THE DEADLINE-ONLY EVICTION (merge-queue PR, R5;
+/// mc_chuggy_deadline_only consts). The OTHER GatePricing branch on a
+/// machine trace: two gate failures metered by GAS ALONE (gateLeft
+/// identically 0 — no gate account exists to spend) into the gas wall at
+/// the third — v1's §5a gate-loop shape reproduced on chuggy's machine,
+/// with the charter's required gas doing exactly the backstop job the v1
+/// finding said it must (docs/chuggernaut.md §6.2: without it, "the day
+/// never ends" and the queue behind the spinning ticket starves). Each
+/// eviction is attributed {repo, branchMoved: true}, and the final wall
+/// parks with resumeAt RLanding — re-ENQUEUE, not re-gate — unretryable
+/// at zero gas under RetryCharged (the permanently-parked corner, honest).
+module chuggy_witness_gate_deadline_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 3,
+    N_TASKS = 2,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    GATE_PRICING = DeadlineOnly,
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 2,
+    N_REGIONS = 2,
+    N_REPOS = 2
+  ).* from "../domain"
+
+  // --- Deterministic drivers (file header; only the ones this shape uses).
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+  action doDispatch(j: int): bool = all {
+    dispatchableIn(core, j),
+    apply(decideDispatch(core, j))
+  }
+  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+    taskPhaseTickets.contains(j),
+    deliverableTaskIds(core, j).contains(tid),
+    cited_.subseteq(regions),
+    apply(decideTaskDone(core, j, tid, v, cited_))
+  }
+  action doWorkReduce(j: int): bool = all {
+    reducibleWork.contains(j),
+    apply(decideWorkReduce(core, j))
+  }
+  action doEvalReduce(j: int): bool = all {
+    reducibleEval.contains(j),
+    apply(decideEvalStageReduce(core, j))
+  }
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+  action doGateResolve(j: int, out: LandOutcome): bool = all {
+    gatedTickets.contains(j),
+    landOutcomes(true).contains(out),
+    apply(decideLand(core, j, out, true))
+  }
+
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  run gateEvictionDeadlineOnlyDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))
+      .expect(allInvariants)
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // eval id 3
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // Gate failure #1: gas alone pays (2 -> 1); no gate account exists.
+      .then(doDequeue(1, true))
+      .expect(and { tickets.get(1).phase == PGated, allInvariants })
+      .then(doGateResolve(1, LandFailed))
+      .expect(and {
+        lastStep.label == "rework-started gate_failure",
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).gateLeft == 0,              // identically zero: DeadlineOnly
+        tickets.get(1).gasLeft == 1,
+        allInvariants
+      })
+      .then(doTaskDone(1, 4, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 5, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // eval id 6
+      .expect(allInvariants)
+      .then(doTaskDone(1, 6, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // Gate failure #2: the loop spins on gas (1 -> 0) — the §5a shape.
+      .then(doDequeue(1, true))
+      .expect(allInvariants)
+      .then(doGateResolve(1, LandFailed))
+      .expect(and {
+        lastStep.label == "rework-started gate_failure",
+        tickets.get(1).gateLeft == 0,
+        tickets.get(1).gasLeft == 0,
+        allInvariants
+      })
+      .then(doTaskDone(1, 7, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 8, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // eval id 9
+      .expect(allInvariants)
+      .then(doTaskDone(1, 9, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // Gate failure #3, gas empty: THE BACKSTOP — the DeadlineOnly wall
+      // parks the ticket instead of spinning forever (R5: no free loop,
+      // never silently).
+      .then(doDequeue(1, true))
+      .expect(allInvariants)
+      .then(doGateResolve(1, LandFailed))
+      .expect(and {
+        lastStep.label == "ticket-escalated gas_exhausted",
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        tickets.get(1).phase == PEscalated,
+        tickets.get(1).reason == RsGasExhausted,
+        tickets.get(1).resumeAt == RLanding,       // resume re-ENQUEUES
+        // Charging resume at zero gas: parked for good under RetryCharged
+        // (the honest corner — a human funds nothing by pressing Retry).
+        retryableEscalated == Set(),
+        gateFreeIn(core, 1),                       // the wall freed the slot
+        allInvariants
+      })
+}
+
+/// SHAPE 8 — THE GROUP (merge-queue PR, R2/R7; mc_chuggy_budgeted consts).
+/// Run 1: absorb from READY (the ticket-batched BATCHING climb — the
+/// stepDescends convention roster's arm, firing on a machine trace), the
+/// lead walked through the pipeline, and the quiet landing's FAN-OUT: one
+/// SquashMerge completes the member (CompleteViaBatch, landings 0, mark
+/// retained) and the member's CROSS-REPO dependent derives Ready in the
+/// same post-state ("unblock exactly as an individual Done would").
+/// Run 2: absorb from BLOCKED (the note's second flavor, verbatim
+/// "Batched from Ready or Blocked"), the member's un-Done dep GATING THE
+/// LEAD through the union, and the DISSOLUTION: the lead's revoke releases
+/// the member back to PPending (ReleaseMember, mark cleared, re-batchable).
+module chuggy_witness_batch_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 3,
+    N_TASKS = 2,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    GATE_PRICING = Budgeted(1),
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 2,
+    N_REGIONS = 2,
+    N_REPOS = 2
+  ).* from "../domain"
+
+  // --- Deterministic drivers (file header; only the ones these shapes use).
+  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    apply(decideArrive(core, deps_, prog, repo_))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+  action doAbsorb(l: int, m: int): bool = all {
+    absorbableIn(core, l, m),
+    apply(decideAbsorb(core, l, m))
+  }
+  action doRevoke(j: int): bool = all {
+    revocableTickets.contains(j),
+    apply(decideRevoke(core, j))
+  }
+  action doDispatch(j: int): bool = all {
+    dispatchableIn(core, j),
+    apply(decideDispatch(core, j))
+  }
+  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+    taskPhaseTickets.contains(j),
+    deliverableTaskIds(core, j).contains(tid),
+    cited_.subseteq(regions),
+    apply(decideTaskDone(core, j, tid, v, cited_))
+  }
+  action doWorkReduce(j: int): bool = all {
+    reducibleWork.contains(j),
+    apply(decideWorkReduce(core, j))
+  }
+  action doEvalReduce(j: int): bool = all {
+    reducibleEval.contains(j),
+    apply(decideEvalStageReduce(core, j))
+  }
+  action doDequeue(j: int, moved: bool): bool = all {
+    gateEnterableIn(core, j),
+    apply(decideDequeue(core, j, moved))
+  }
+
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  run batchFanOutDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))         // ticket 1: the lead
+      .expect(allInvariants)
+      .then(doArrive(Set(), progFlat1, 1))         // ticket 2: the member-to-be
+      .expect(allInvariants)
+      .then(doArrive(Set(2), progFlat1, 2))        // ticket 3: repo-2 dependent OF the member
+      .expect(allInvariants)
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doRelease(2))
+      .expect(allInvariants)
+      .then(doRelease(3))
+      .expect(and { isBlocked(3), allInvariants }) // blocked behind the member
+      // THE ABSORPTION, from Ready: the BATCHING climb fires (the
+      // stepDescends exemption arm's deterministic witness — measure UP,
+      // invariants green ON the climbing step).
+      .then(doAbsorb(1, 2))
+      .expect(and {
+        lastStep.label == "ticket-batched",
+        lastStep.effects == ["AbsorbMember"],
+        tickets.get(2).phase == PBatched,
+        tickets.get(2).batch == BUnder(1),
+        membersOf(core, 1) == Set(2),
+        currentMeasure > prevMeasure,              // the climb is real...
+        allInvariants                              // ...and exempted (BATCHING)
+      })
+      // The lead runs the pipeline for the whole group (dispatch charges
+      // the LEAD's gas alone; the member spends nothing, ever).
+      .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
+      .expect(and { tickets.get(2).gasLeft == GAS, allInvariants })
+      .then(doTaskDone(1, 1, VPass, Set()))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 2, VPass, Set()))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))                       // eval id 3
+      .expect(allInvariants)
+      .then(doTaskDone(1, 3, VPass, Set()))
+      .expect(allInvariants)
+      .then(doEvalReduce(1))
+      .expect(and { lastStep.label == "eval-passed", allInvariants })
+      // THE FAN-OUT (R2/R7): the quiet fast-path lands the lead, and the
+      // group's ONE landing effect completes the member atomically —
+      // whose repo-2 dependent derives Ready in the same post-state.
+      .then(doDequeue(1, false))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.transitions == [
+          { ticket: 1, from: PLanding, to: PDone },
+          { ticket: 2, from: PBatched, to: PDone }
+        ],
+        lastStep.effects == ["SquashMerge", "CompleteViaBatch"],
+        lastStep.landing == LOAttempt({ repo: 1, branchMoved: false }),
+        tickets.get(1).landings == 1,              // THE group's one effect
+        tickets.get(2).landings == 0,              // the member emitted nothing
+        tickets.get(2).phase == PDone,
+        tickets.get(2).batch == BUnder(1),         // provenance retained
+        isReady(3),                                // the member's dependent unblocks
+        allInvariants
+      })
+
+  run batchDissolveDeterministicTest =
+    init
+      .then(doArrive(Set(), progFlat1, 1))         // ticket 1: external dep, stays Draft
+      .expect(allInvariants)
+      .then(doArrive(Set(), progFlat1, 1))         // ticket 2: the lead
+      .expect(allInvariants)
+      .then(doArrive(Set(1), progFlat1, 1))        // ticket 3: dep on the Draft
+      .expect(allInvariants)
+      .then(doRelease(2))
+      .expect(and { isReady(2), allInvariants })
+      .then(doRelease(3))
+      .expect(and { isBlocked(3), allInvariants }) // Blocked behind Draft 1
+      // THE ABSORPTION, from BLOCKED (the note verbatim: "Batched from
+      // Ready or Blocked") — and the member's un-Done dep now gates the
+      // LEAD through the union: Ready flips to Blocked with no dep of the
+      // lead's own touched.
+      .then(doAbsorb(2, 3))
+      .expect(and {
+        lastStep.label == "ticket-batched",
+        tickets.get(3).phase == PBatched,
+        groupDeps(core, 2) == Set(1),              // the union, derived
+        isBlocked(2),                              // the lead gates on it
+        not(isReady(2)),
+        allInvariants
+      })
+      // THE DISSOLUTION: revoking the lead releases the (un-doomed)
+      // member back to the waiting room — mark cleared, re-batchable,
+      // still blocked behind its own dep, covered by nothing because
+      // nothing is wrong.
+      .then(doRevoke(2))
+      .expect(and {
+        lastStep.label == "ticket-revoked",
+        lastStep.transitions == [
+          { ticket: 2, from: PPending, to: PRevoked },
+          { ticket: 3, from: PBatched, to: PPending }
+        ],
+        lastStep.effects == ["Revoke", "ReleaseMember"],
+        tickets.get(3).phase == PPending,
+        tickets.get(3).batch == BNone,
+        tickets.get(3).reason == RsNone,
+        isBlocked(3),                              // its own dep still un-Done
+        membersOf(core, 2) == Set(),
+        currentMeasure < prevMeasure,              // dissolution descends
         allInvariants
       })
 }

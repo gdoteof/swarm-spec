@@ -282,11 +282,25 @@ echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation + citations (type
 # for carry reachability. The extra nondet draw per completion changed the
 # simulator's nondet structure AGAIN, so every 9b seed was re-examined
 # once more; forensics at each probe.
+# The WITNESS-HARDENING PR restructured 9b into two layers (policy at the
+# 9b header) and REMOVED the two pinned allInvariants "twin" runs that used
+# to sit at the end of this stage (retryfree @ 0xcfadb0ec5ca34c85 over 50k
+# samples; citations @ 0xd21f881a768a43bc over 20k) — fully subsumed by
+# 9b's deterministic layer: each twin's entire purpose was "allInvariants
+# ON a trace known to contain the climb/carry" (the sign-flip catcher,
+# found by adversarial review; mutant-verified then and re-verified now),
+# and the deterministic traces assert allInvariants after EVERY step of a
+# trace that provably contains the shape — including the witnessing step
+# itself — with zero seed dependence. The unseeded runs below keep generic
+# random allInvariants coverage on all FOUR instances; the citations run is
+# NEW here for exactly that reason (its only random allInvariants coverage
+# used to ride the removed twin).
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
 for f in specs/chuggy/measure.qnt specs/chuggy/domain.qnt \
-         specs/chuggy/mc/mc_chuggy.qnt specs/chuggy/tests/chuggy_test.qnt; do
+         specs/chuggy/mc/mc_chuggy.qnt specs/chuggy/tests/chuggy_test.qnt \
+         specs/chuggy/tests/chuggy_witness_test.qnt; do
   echo "--- typecheck $f"
   npx quint typecheck "$f"
 done
@@ -297,37 +311,78 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only \
   --invariant=allInvariants --max-samples=2000 --max-steps=40
 npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=allInvariants --max-samples=2000 --max-steps=40
-# Pin stepDescends' RetryFree CHURN exemption on a trace KNOWN to contain the
-# free pipeline-resume climb (the 9b seed below): the 9b witness proves the
-# climb reachable, but only allInvariants ON that trace proves the exemption
-# arm exempts it — a sign-flip there ships green through everything else
-# (found by adversarial review; mutant-verified). (Seed moves with the 9b
-# probe's — re-pinned by the citations PR, forensics at the probe.)
-npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
-  --invariant=allInvariants --max-samples=50000 --max-steps=40 \
-  --seed=0xcfadb0ec5ca34c85 --backend=rust
-# The citations twin of the pin above: allInvariants on a trace KNOWN to
-# contain a CARRY (the 9b carry probe's seed below, mc_chuggy_citations —
-# the mc_livelock-style instance built for the probe): the probe proves the
-# carry reachable, but only allInvariants ON that trace proves the carried
-# spawn satisfies citationsWellFormed/idsAccounted/recordMonotone and that
-# the scoped spawn's smaller climb still descends (measureDescends) where a
-# carry actually happens — the three main instances' random runs hit
-# carries too rarely to guarantee that coverage.
 npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
-  --invariant=allInvariants --max-samples=20000 --max-steps=40 \
-  --seed=0xd21f881a768a43bc --backend=rust
+  --invariant=allInvariants --max-samples=2000 --max-steps=40
 
-# 9b — anti-vacuity, expected-fail (the Stage 6a pattern: pinned seed, rust
-# backend, grep the verdict — never trust exit codes alone). On the
-# RetryFree instance the witness freeClimbNever ("no operator-retry into a
-# pipeline phase ever climbs the measure") MUST be violated: a free resume
-# into Evaluating/Landing climbs the measure and is exactly the RetryFree
-# CHURN arm that stepDescends exempts. If this run ever passes, that
-# exemption has become dead code (or free retries silently started
-# charging) — fail loudly. (The witness deliberately excludes the pre-work
-# RPending resume, which climbs free under BOTH meterings — domain.qnt
-# freeClimbNever has the argument.)
+echo
+echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + random layer (warns) ==="
+# LAYER POLICY (the witness-hardening PR, after the citations PR forced the
+# FOURTH consecutive freeClimbNever seed re-pin): the four witnessed shapes
+# are trace facts, and each now has a deterministic machine trace — so the
+# DETERMINISTIC layer guards semantics and GATES the build, while the
+# RANDOM pinned-seed layer guards trace-space health and only WARNS. A
+# nondet-changing PR can kill the random layer's seeds (that layer's
+# warning prints the re-pin protocol); it cannot touch the deterministic
+# layer, which is what makes the four shapes' reachability — and
+# allInvariants along their traces — survive every future nondet drift
+# without a seed hunt.
+#
+# 9b-DET — the LOAD-BEARING layer: four deterministic machine traces
+# (specs/chuggy/tests/chuggy_witness_test.qnt; mechanism note in its
+# header — `init.then(apply(decide*))` with guard-checked drivers, so
+# every accepted trace is a trace of `step`). Each run proves its shape
+# REACHABLE, asserts the witness verdict AT the witnessing step (violated
+# exactly where the shape fires, holding where it must not), and asserts
+# allInvariants after EVERY step — which is what subsumes the removed
+# Stage 9 pinned twins. Zero seeds anywhere. Mutation-verified
+# (2026-08-13, this PR): a sign-flip on stepDescends' RetryFree arm
+# (either conjunct) and a carry-despite-intersection mutant in
+# spawnEvalScoped are each caught by this layer alone.
+for m in chuggy_witness_free_test chuggy_witness_cascade_test \
+         chuggy_witness_stage_test chuggy_witness_carry_test; do
+  echo "--- quint test --main=$m specs/chuggy/tests/chuggy_witness_test.qnt"
+  npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
+done
+
+# 9b-RND — the DEMOTED random layer: the four pinned-seed expected-violation
+# probes (the Stage 6a pattern: pinned seed, rust backend, grep the verdict),
+# kept because they answer a question the deterministic layer cannot: does
+# RANDOM exploration of the CURRENT nondet surface still reach the shape at
+# this seed/budget (trace-space health)? A probe that stops firing no longer
+# fails the build — it prints the loud warning + re-pin protocol below.
+# The verdict TRICHOTOMY still gates on crashes: a probe run that HELD
+# (exit 0 with an explicit [ok]) or fired without its signature is
+# trace-space news and only WARNS; a probe run that CRASHED — nonzero exit
+# with no [violation], or exit 0 with no verdict at all (typo'd invariant,
+# missing file, bad flag, dead backend) — is a HARNESS bug, not a dead
+# seed, and hard-fails exactly like the pre-hardening era. Demotion never
+# extends to malformed invocations.
+# Per-probe forensics from the gating era are preserved at each probe.
+warn_probe() {
+  echo "WARNING: random witness probe '$1' did not fire: $2" >&2
+  echo "         The build does NOT fail: Stage 9b-DET above already proves the" >&2
+  echo "         shape reachable and allInvariants along its trace. This warning" >&2
+  echo "         means the RANDOM layer lost trace-space coverage (a nondet-" >&2
+  echo "         structure change killed the seed, or the shape got rarer)." >&2
+  echo "         Re-pin protocol (the pre-hardening ritual, now non-blocking):" >&2
+  echo "           1. verify the old seed is genuinely dead: rerun the probe with" >&2
+  echo "              its full sample budget and confirm [ok] (no violation);" >&2
+  echo "           2. hunt unseeded: the same command without --seed until" >&2
+  echo "              [violation]; note the reported seed and the sample cost;" >&2
+  echo "           3. pin the new seed here with forensics (old seed verified" >&2
+  echo "              dead, unseeded find cost, first-trace reproduction time);" >&2
+  echo "           4. confirm the new violation trace still carries this probe's" >&2
+  echo "              signature greps." >&2
+}
+
+# 9b-RND probe 1 — freeClimbNever on the RetryFree instance: expected to
+# be violated — a free resume into Evaluating/Landing climbs the measure
+# and is exactly the RetryFree CHURN arm that stepDescends exempts. (The
+# witness deliberately excludes the pre-work RPending resume, which climbs
+# free under BOTH meterings — domain.qnt freeClimbNever has the argument.)
+# Semantics — the exemption arm being alive, allInvariants on the climb —
+# are 9b-DET's freeClimbDeterministicTest now; this probe only reports
+# whether random exploration still finds the shape at this seed.
 # (Seed re-pinned for the notes-reconciliation PR — the third re-pin, same
 # reason as PR 2's and PR 3's: the nondet structure changed again — the
 # step action list shrank by three (freeze/unfreeze/stalled-retry gone)
@@ -348,31 +403,31 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
   --max-samples=50000 --max-steps=40 --seed=0xcfadb0ec5ca34c85 --backend=rust 2>&1); then
-  echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
-  echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
-  exit 1
-fi
-echo "$free_out" | grep -q '\[violation\]' || {
-  echo "FAIL: mc_chuggy_retryfree witness run failed for a reason other than the expected violation:" >&2
+  if echo "$free_out" | grep -q '\[ok\]'; then
+    warn_probe freeClimbNever "seed 0xcfadb0ec5ca34c85 no longer reaches the free climb ([ok] over its 50k budget)"
+  else
+    echo "FAIL: freeClimbNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$free_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$free_out" | grep -q '\[violation\]'; then
+  echo "FAIL: freeClimbNever probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
   echo "$free_out" | tail -5 >&2
   exit 1
-}
-echo "$free_out" | grep -q 'operator-retry' || {
-  echo "FAIL: freeClimbNever violation trace lacks the operator-retry signature" >&2
-  exit 1
-}
-echo "Free-retry climb reproduced: an uncharged operator resume climbs the measure"
-echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt CHURN set)."
+elif ! echo "$free_out" | grep -q 'operator-retry'; then
+  warn_probe freeClimbNever "violation trace lacks the operator-retry signature"
+else
+  echo "Random probe freeClimbNever: still firing (an uncharged operator resume climbs"
+  echo "the measure — trace-space coverage of the stepDescends CHURN exemption intact)."
+fi
 
-# 9b, second probe (PR 2) — cascade reachability, expected-fail. The
-# witness cascadeParkNever ("no revoke ever parks a dependent") MUST be
-# violated on the budgeted instance: a reachable revoke whose atomic
-# cascade parks at least one dependent (StepRecord with >1 transition) is
-# the machine-level proof that cascadeSafety's green runs above are checked
-# against traces where the cascade actually fires — without it, a fleet
-# whose revokeDoomed set stayed empty would satisfy cascadeSafety
-# vacuously. The unit tests walk the 3-ticket chain deterministically; this
-# pins the same shape as REACHABLE in the machine. (Notes-PR forensics:
+# 9b-RND probe 2 (PR 2) — cascadeParkNever on the budgeted instance:
+# expected to be violated — a reachable revoke whose atomic cascade parks
+# at least one dependent (StepRecord with >1 transition). Reachability and
+# cascadeSafety-on-the-parked-state are 9b-DET's
+# cascadeParkDeterministicTest now; this probe only reports trace-space
+# coverage at this seed. (Notes-PR forensics:
 # the parks now land on PEscalated — the merged desk — but the witness
 # shape, label, and RsDependencyRevoked signature are unchanged, and the
 # PR 2 seed SURVIVED the re-examination: it still violates within its
@@ -384,32 +439,33 @@ echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt C
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=cascadeParkNever \
   --max-samples=20000 --max-steps=40 --seed=0x5cea1f53f74a0e4e --backend=rust 2>&1); then
-  echo "FAIL: cascadeParkNever unexpectedly HELD on mc_chuggy_budgeted —" >&2
-  echo "      no reachable revoke ever cascade-parks a dependent (cascadeSafety may be vacuous)" >&2
-  exit 1
-fi
-echo "$park_out" | grep -q '\[violation\]' || {
-  echo "FAIL: mc_chuggy_budgeted cascade probe failed for a reason other than the expected violation:" >&2
+  if echo "$park_out" | grep -q '\[ok\]'; then
+    warn_probe cascadeParkNever "seed 0x5cea1f53f74a0e4e no longer reaches a cascade park ([ok] over its 20k budget)"
+  else
+    echo "FAIL: cascadeParkNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$park_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$park_out" | grep -q '\[violation\]'; then
+  echo "FAIL: cascadeParkNever probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
   echo "$park_out" | tail -5 >&2
   exit 1
-}
-echo "$park_out" | grep -q 'ticket-revoked' && echo "$park_out" | grep -q 'RsDependencyRevoked' || {
-  echo "FAIL: cascadeParkNever violation trace lacks the revoke-then-park signature" >&2
-  exit 1
-}
-echo "Cascade reproduced: a reachable revoke atomically parks a dependent behind the"
-echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the PR 2 gate)."
+elif ! { echo "$park_out" | grep -q 'ticket-revoked' && echo "$park_out" | grep -q 'RsDependencyRevoked'; }; then
+  warn_probe cascadeParkNever "violation trace lacks the revoke-then-park signature"
+else
+  echo "Random probe cascadeParkNever: still firing (a reachable revoke atomically parks"
+  echo "a dependent behind the dependency_revoked wall — trace-space coverage intact)."
+fi
 
-# 9b, third probe (PR 3) — stage-advance reachability, expected-fail. The
-# witness stageAdvanceNever ("no eval stage ever advances") MUST be
-# violated on the budgeted instance (MAX_STAGES = 2, so nondet arrivals
-# author multi-stage programs): a reachable eval-stage-passed step — the
-# Evaluating -> Evaluating edge, chuggernaut spec.md §2.1 line 832 — is
-# the machine-level proof that the green invariant runs above cover traces
-# where the staged interpreter and the measure's stage digit actually
-# fire; a fleet that only ever drew single-stage programs would leave both
-# unexercised. The unit tests walk the advance deterministically; this
-# pins it as REACHABLE. (Old PR 1-2 seeds cannot cover this — the label
+# 9b-RND probe 3 (PR 3) — stageAdvanceNever on the budgeted instance:
+# expected to be violated — a reachable eval-stage-passed step (the
+# Evaluating -> Evaluating edge, chuggernaut spec.md §2.1 line 832).
+# Reachability, the descent through the advance, and allInvariants on the
+# advancing trace are 9b-DET's stageAdvanceDeterministicTest now; this
+# probe only reports trace-space coverage at this seed — whether random
+# arrivals still draw and run multi-stage programs to an advance.
+# (Old PR 1-2 seeds cannot cover this — the label
 # did not exist; probe and seed are PR 3-new, found unseeded within ~25k
 # samples. Notes-PR forensics: the PR 3 seed SURVIVED the re-examination —
 # it still violates within its budget on the reshaped machine (631ms) with
@@ -420,36 +476,35 @@ echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the P
 if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=stageAdvanceNever \
   --max-samples=20000 --max-steps=40 --seed=0x9180927e576bcf85 --backend=rust 2>&1); then
-  echo "FAIL: stageAdvanceNever unexpectedly HELD on mc_chuggy_budgeted —" >&2
-  echo "      no reachable eval stage ever advances (the staged interpreter may be vacuous)" >&2
-  exit 1
-fi
-echo "$stage_out" | grep -q '\[violation\]' || {
-  echo "FAIL: mc_chuggy_budgeted stage probe failed for a reason other than the expected violation:" >&2
+  if echo "$stage_out" | grep -q '\[ok\]'; then
+    warn_probe stageAdvanceNever "seed 0x9180927e576bcf85 no longer reaches a stage advance ([ok] over its 20k budget)"
+  else
+    echo "FAIL: stageAdvanceNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$stage_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$stage_out" | grep -q '\[violation\]'; then
+  echo "FAIL: stageAdvanceNever probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
   echo "$stage_out" | tail -5 >&2
   exit 1
-}
-echo "$stage_out" | grep -q 'eval-stage-passed' || {
-  echo "FAIL: stageAdvanceNever violation trace lacks the eval-stage-passed signature" >&2
-  exit 1
-}
-echo "Stage advance reproduced: a reachable multi-stage program passes a non-final"
-echo "stage and spawns the next (the PR 3 interpreter and stage digit are exercised)."
+elif ! echo "$stage_out" | grep -q 'eval-stage-passed'; then
+  warn_probe stageAdvanceNever "violation trace lacks the eval-stage-passed signature"
+else
+  echo "Random probe stageAdvanceNever: still firing (a reachable multi-stage program"
+  echo "passes a non-final stage and spawns the next — trace-space coverage intact)."
+fi
 
-# 9b, fourth probe (citations PR) — carry reachability, expected-fail. The
-# witness carryNever ("no eval spawn ever carries a verdict") MUST be
-# violated on mc_chuggy_citations (the probe instance built for exactly
-# this — see its header: one ticket, singleton task sets, flat programs,
-# Budgeted(1), the densest honest carry choreography being the GATE-REWORK
-# carry): a reachable CarryEvalVerdicts effect — a retained passing
-# verdict whose citation is disjoint from what the rework's work attempt
-# touched, reused instead of rerun — is the machine-level proof that the
-# scoped respawn actually skips an evaluator on machine traces, so the
-# green invariant runs above (and the pinned allInvariants run on THIS
-# seed) are checked against traces where a carry occurs, not vacuous: an
-# adversary that always cited the full universe (or nothing) never takes
-# the carry branch, and carryNever would hold. The unit tests walk carries
-# deterministically; this pins one as REACHABLE. (Probe and seed are
+# 9b-RND probe 4 (citations PR) — carryNever on mc_chuggy_citations (the
+# probe instance built for exactly this — see its header: one ticket,
+# singleton task sets, flat programs, Budgeted(1), the densest honest
+# carry choreography being the GATE-REWORK carry): expected to be violated
+# — a reachable CarryEvalVerdicts effect, a retained passing verdict
+# reused instead of rerun. Reachability and the invariants over the
+# carried state are 9b-DET's carryDeterministicTest now (with the
+# scope-discipline twin carryScopeRespectsIntersectionTest); this probe
+# only reports whether the citation dice still land the carry at this
+# seed. (Probe and seed are
 # citations-PR-new — no older seed can cover this: the effect did not
 # exist. Found unseeded within ~481k samples (~13s, rust backend) after
 # the shared instances proved too diffuse — carryNever HELD over ~2M
@@ -460,22 +515,24 @@ echo "stage and spawns the next (the PR 3 interpreter and stage digit are exerci
 if carry_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
   --invariant=carryNever \
   --max-samples=20000 --max-steps=40 --seed=0xd21f881a768a43bc --backend=rust 2>&1); then
-  echo "FAIL: carryNever unexpectedly HELD on mc_chuggy_citations —" >&2
-  echo "      no reachable eval spawn ever carries a verdict (citation scoping may be vacuous)" >&2
-  exit 1
-fi
-echo "$carry_out" | grep -q '\[violation\]' || {
-  echo "FAIL: mc_chuggy_citations carry probe failed for a reason other than the expected violation:" >&2
+  if echo "$carry_out" | grep -q '\[ok\]'; then
+    warn_probe carryNever "seed 0xd21f881a768a43bc no longer reaches a carry ([ok] over its 20k budget)"
+  else
+    echo "FAIL: carryNever probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$carry_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$carry_out" | grep -q '\[violation\]'; then
+  echo "FAIL: carryNever probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
   echo "$carry_out" | tail -5 >&2
   exit 1
-}
-echo "$carry_out" | grep -q 'CarryEvalVerdicts' && echo "$carry_out" | grep -q 'TSCarried' || {
-  echo "FAIL: carryNever violation trace lacks the carried-verdict signature" >&2
-  exit 1
-}
-echo "Carry reproduced: a reachable rework re-entry carries a disjoint retained passing"
-echo "verdict instead of rerunning its evaluator (citation scoping is exercised, not"
-echo "vacuous — the citations PR's reachability probe)."
+elif ! { echo "$carry_out" | grep -q 'CarryEvalVerdicts' && echo "$carry_out" | grep -q 'TSCarried'; }; then
+  warn_probe carryNever "violation trace lacks the carried-verdict signature"
+else
+  echo "Random probe carryNever: still firing (a reachable rework re-entry carries a"
+  echo "disjoint retained passing verdict — trace-space coverage intact)."
+fi
 
 echo
 echo "=== All checks passed ==="

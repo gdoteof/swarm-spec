@@ -83,8 +83,11 @@ module mc_chuggy_deadline_only {
 /// RetryFree metering (v1's model-status §5b operator churn, kept as a
 /// configuration): allInvariants must still HOLD here — free resumes are
 /// exactly the exempted CHURN arm of stepDescends — while the
-/// freeClimbNever witness must be VIOLATED (check.sh Stage 9's
-/// expected-violation run proves the exemption is exercised, not dead).
+/// freeClimbNever witness must be VIOLATED (check.sh Stage 9b: the
+/// deterministic free-climb machine trace in
+/// tests/chuggy_witness_test.qnt — same consts as this instance — proves
+/// the exemption is exercised, not dead; the demoted pinned-seed probe
+/// reports trace-space health).
 /// GAS = 2 keeps escalations frequent so retries are common. The
 /// PR 3 churn bound is exercised here too: a free REvaluating resume
 /// respawns the LOWEST stage's fan-out with the full stage digit
@@ -118,11 +121,14 @@ module mc_chuggy_retryfree {
 /// the mixed-verdict eval-rework carry is impossible over singleton
 /// unanimous stages, and that path is unit-test-pinned anyway), flat
 /// programs, Budgeted(1) so exactly one gate rework exists to scope.
-/// check.sh Stage 9b's fourth expected-violation run (carryNever) and its
-/// paired pinned allInvariants run — green invariants ON a trace known to
-/// contain a carry — live here. The three main instances above still
-/// reach carries when the dice align; this instance exists so the probe
-/// is deterministic and cheap, not because carries need special bounds.
+/// check.sh Stage 9b's carry checks live here: the deterministic
+/// gate-rework-carry machine trace (tests/chuggy_witness_test.qnt, same
+/// consts — it subsumed the old paired pinned allInvariants run: green
+/// invariants ON a trace known to contain a carry, now asserted at every
+/// step of the deterministic trace) and the demoted pinned-seed
+/// carryNever probe. The three main instances above still reach carries
+/// when the dice align; this instance exists so the carry checks are
+/// deterministic and cheap, not because carries need special bounds.
 module mc_chuggy_citations {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(

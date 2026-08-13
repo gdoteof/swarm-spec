@@ -257,8 +257,10 @@
 ///   pre-work resume alone. RetryFree deliberately reproduces v1's
 ///   discovered operator-churn livelock (model-status §5b) as a
 ///   configuration, so the model can generate escalation traces under both
-///   prices — the mc_chuggy_retryfree instance plus check.sh Stage 9's
-///   expected-violation witness keep that exemption exercised, not dead.
+///   prices — the mc_chuggy_retryfree instance plus check.sh Stage 9b's
+///   witness layer (the deterministic free-climb machine trace in
+///   tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
+///   keep that exemption exercised, not dead.
 ///
 ///   AUTHORING (PR 2, reshaped by the notes PR — author churn above the
 ///   released pipeline; each member is bounded by name):

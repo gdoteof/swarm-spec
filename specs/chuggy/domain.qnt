@@ -465,6 +465,33 @@ module chuggy_domain {
   pure def isBlockedIn(c: Core, j: int): bool =
     c.tickets.get(j).phase == PPending and not(depsDoneIn(c, j))
 
+  /// May the dispatcher launch ticket j? Ready (the derived waiting room)
+  /// with gas to charge — entry to Working always meters (standing rule
+  /// 2). Pending tickets have never spent gas (arrival grants the full
+  /// GAS and authoring charges nothing), so the gas conjunct is
+  /// structurally implied whenever init accepted the configuration; it is
+  /// stated so the enablement is ONE predicate. HOISTED by the
+  /// witness-hardening PR (review finding m6): this guard used to live
+  /// inline in the `dispatch` action, and the witness drivers carried a
+  /// copied expression of it — a copied guard drifts silently
+  /// (strengthen the machine's and the stale copy keeps the drivers'
+  /// "machine trace" claim alive while the machine refuses the step).
+  /// Both the `dispatch` action and tests/chuggy_witness_test.qnt's
+  /// doDispatch drivers now REFERENCE this definition; neither copies it.
+  pure def dispatchableIn(c: Core, j: int): bool = and {
+    isReadyIn(c, j),
+    c.tickets.get(j).gasLeft > 0
+  }
+
+  /// Every task id ticket j has EVER issued — the delivery range the
+  /// at-least-once fabric may name (live or retired; ids dense from
+  /// firstTaskId, so this is exactly firstTaskId..nextTaskId-1). Shared,
+  /// like dispatchableIn, by the `taskDone` action's nondet draw and the
+  /// witness drivers' guards (tests/chuggy_witness_test.qnt), so the
+  /// range is referenced on both sides, never copied.
+  pure def deliverableTaskIds(c: Core, j: int): Set[int] =
+    firstTaskId.to(nextTaskId(c.tickets.get(j)) - 1)
+
   /// Park a ticket on the human desk, naming the wall (vocabulary carried
   /// from v1; the charter §2 termination row commits the terminal, not the
   /// names) and where Retry resumes. The open desk task is DERIVED from
@@ -957,12 +984,14 @@ module chuggy_domain {
   /// non-goals: no bespoke scheduler) — no slot count, no queue order, no
   /// fairness. Pending tickets have never spent gas (arrival grants the full
   /// GAS and authoring charges nothing), so gas >= 1 here whenever init
-  /// accepted the configuration; the guard keeps it structural.
+  /// accepted the configuration; the guard keeps it structural — stated
+  /// once, in dispatchableIn, which the witness drivers reference too
+  /// (guards are shared, never copied — see dispatchableIn's header).
   action dispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
     all {
-      tickets.get(j).gasLeft > 0,
+      dispatchableIn(core, j),
       apply(decideDispatch(core, j))
     }
   }
@@ -974,7 +1003,8 @@ module chuggy_domain {
   /// at-least-once: the machine cannot choose to not receive duplicates.
   ///
   /// Duplicate-adversary SCOPE (PR 3 extension of the PR 1 note): the tid
-  /// range below is the ticket's ENTIRE task history — ids are sequential
+  /// range below (deliverableTaskIds — the shared definition the witness
+  /// drivers reference too) is the ticket's ENTIRE task history — ids are sequential
   /// within the ticket and never reused (chuggernaut spec.md §1.2), so a
   /// stale completion from an earlier STAGE or incarnation names a retired
   /// id and no-ops BY IDENTITY (decideTaskDone finds no live running
@@ -1003,7 +1033,7 @@ module chuggy_domain {
   action taskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
-    nondet tid = 1.to(tickets.get(j).record.length() + tickets.get(j).tasks.size()).oneOf()
+    nondet tid = deliverableTaskIds(core, j).oneOf()
     nondet v = Set(VPass, VFail).oneOf()
     nondet cited_ = regions.powerset().oneOf()
     apply(decideTaskDone(core, j, tid, v, cited_))
@@ -1382,10 +1412,10 @@ module chuggy_domain {
   /// No ticket may wait invisibly forever behind a revoked dep — and since
   /// PRevoked opens no task (the author's settled choice), this invariant
   /// is the coverage deskVisibility cannot provide through the dep itself.
-  /// NON-VACUITY: check.sh Stage 9b's second expected-violation run pins a
-  /// trace where the cascade actually parks a dependent
-  /// (cascadeParkNever), and tests/chuggy_test.qnt walks a 3-ticket chain
-  /// end-to-end.
+  /// NON-VACUITY: check.sh Stage 9b pins a machine trace where the
+  /// cascade actually parks dependents (cascadeParkNever — deterministic
+  /// since the witness-hardening PR, tests/chuggy_witness_test.qnt), and
+  /// tests/chuggy_test.qnt walks a 3-ticket chain end-to-end.
   val cascadeSafety: bool = revokeDoomed.forall(j => or {
     tickets.get(j).phase == PRevoked,
     tickets.get(j).phase == PEscalated and tickets.get(j).reason == RsDependencyRevoked
@@ -1408,6 +1438,26 @@ module chuggy_domain {
   /// PR 3 adds NO exemption: the stage advance (eval-stage-passed) must
   /// strictly descend like any other progress step — that is the stage
   /// digit earning its keep.
+  ///
+  /// NORMATIVE CONVENTION (witness-hardening PR): NO EXEMPTION ARM
+  /// WITHOUT A DETERMINISTIC WITNESS RUN THAT FIRES IT. An arm below that
+  /// no deterministic machine trace exercises is either dead code or an
+  /// unreviewed weakening of the descent theorem — and the missing run is
+  /// the review hook that makes either visible: a PR that adds or widens
+  /// an arm here must add the tests/chuggy_witness_test.qnt step that
+  /// fires it (asserting allInvariants on that step, so the arm is proved
+  /// to exempt exactly the climb it names). Current roster:
+  ///   init                  — every run's first step;
+  ///   task-done-duplicate   — free module (the re-delivered completion);
+  ///   land-duplicate        — stage module (the stale landing success);
+  ///   settled               — carry module (the quiet fleet's stutter);
+  ///   operator-retry, RPending flavor
+  ///                         — preWorkResumeClimbDeterministicTest;
+  ///   operator-retry, RetryFree pipeline flavor
+  ///                         — freeClimbDeterministicTest's climbing step;
+  ///   ticket-arrived        — every run's arrivals;
+  ///   ticket-revoked, desk-only flat
+  ///                         — cascadeParkDeterministicTest's second revoke.
   val stepDescends: bool =
     val exempt = or {
       lastStep.label == "init",
@@ -1454,7 +1504,9 @@ module chuggy_domain {
   /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
   /// operator-retry into a PIPELINE phase (Evaluating/Landing) ever climbs
   /// the measure". EXPECTED TO BE VIOLATED on the RetryFree instance
-  /// (check.sh Stage 9's expected-violation run) — the violation is the
+  /// (check.sh Stage 9b: deterministically by the free-climb machine
+  /// trace in tests/chuggy_witness_test.qnt, plus the demoted pinned-seed
+  /// probe) — the violation is the
   /// machine-level proof that free pipeline resumes really do climb and
   /// really are exempted by stepDescends' RetryFree CHURN arm, which no
   /// green run could otherwise distinguish from dead code. Under
@@ -1475,7 +1527,9 @@ module chuggy_domain {
 
   /// ANTI-VACUITY WITNESS #2 (PR 2), not an invariant of the machine: "no
   /// revoke ever parks a dependent". EXPECTED TO BE VIOLATED (check.sh
-  /// Stage 9b's second expected-violation run, pinned seed) — the
+  /// Stage 9b: deterministically by the cascade machine trace in
+  /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
+  /// — the
   /// violation trace is the machine-level proof that the cascade really
   /// fires on reachable states, so cascadeSafety's green runs are checked
   /// against traces that exercise it (a cascade that never parks would
@@ -1485,7 +1539,9 @@ module chuggy_domain {
 
   /// ANTI-VACUITY WITNESS #3 (PR 3), not an invariant of the machine: "no
   /// eval stage ever advances". EXPECTED TO BE VIOLATED (check.sh Stage
-  /// 9b's third expected-violation run, pinned seed) — a reachable
+  /// 9b: deterministically by the stage-advance machine trace in
+  /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
+  /// — a reachable
   /// eval-stage-passed step is the machine-level proof that multi-stage
   /// programs actually run stage-by-stage on machine traces, so the green
   /// invariant runs above are checked against traces where the stage digit
@@ -1498,8 +1554,11 @@ module chuggy_domain {
 
   /// ANTI-VACUITY WITNESS #4 (citations PR), not an invariant of the
   /// machine: "no eval spawn ever carries a verdict". EXPECTED TO BE
-  /// VIOLATED (check.sh Stage 9b's fourth expected-violation run, pinned
-  /// seed) — a reachable CarryEvalVerdicts effect is the machine-level
+  /// VIOLATED (check.sh Stage 9b: deterministically by the gate-rework
+  /// carry machine trace in tests/chuggy_witness_test.qnt — whose twin
+  /// run also pins the intersecting footprint NOT carrying — plus the
+  /// demoted pinned-seed probe) — a reachable CarryEvalVerdicts effect is
+  /// the machine-level
   /// proof that the scoped respawn actually skips an evaluator on machine
   /// traces (a disjoint retained pass really is carried), so the green
   /// invariant runs above — citationsWellFormed, idsAccounted,

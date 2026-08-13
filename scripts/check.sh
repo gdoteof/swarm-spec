@@ -249,17 +249,24 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PRs 1-2 (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-3 (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
 # exercised under both prices) plus the RetryFree instance (the operator-
 # churn exemption in stepDescends must be exercised by a machine run).
 # PR 2 (authoring lifecycle; gate: revoke cascades proved safe) rides the
-# SAME runs: every instance now starts empty and runs the authoring actions
+# SAME runs: every instance starts empty and runs the authoring actions
 # (arrive/freeze/unfreeze/release/revoke), and allInvariants gained
 # revokedNeverLands, cascadeSafety, terminalsAbsorbing, and idsDense — plus
 # a second expected-violation probe in 9b for cascade reachability.
+# PR 3 (task-records depth; gate: phase-outcome combinators pinned by the
+# eval vocabulary extracted from chuggernaut) rides the same runs AGAIN,
+# with PROGRAMS ENABLED: every instance sets MAX_STAGES = 2, so arrivals
+# draw nondet authored eval programs (staged, per-stage combinators) and
+# allInvariants gained recordWellFormed, recordMonotone, and
+# programsWellFormed — plus a third expected-violation probe in 9b for
+# stage-advance reachability.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -283,12 +290,17 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
 # Evaluating/Landing climbs the measure and is exactly the CHURN arm that
 # stepDescends exempts. If this run ever passes, that exemption has become
 # dead code (or free retries silently started charging) — fail loudly.
-# (Seed re-pinned for PR 2: the empty-init + authoring actions changed the
-# trace space, so PR 1's seed no longer reaches the escalate-then-free-
-# resume shape; found unseeded within ~50k samples.)
+# (Seed re-pinned for PR 3 — the second re-pin, same reason as PR 2's: the
+# nondet structure changed again — arrivals now draw an eval program, and
+# taskDone's id range covers the whole retained history, so duplicate
+# no-ops dilute the escalate-then-free-resume shape. PR 2's seed
+# 0x1d4e77a47c8ba09e was verified GENUINELY DEAD before re-pinning: its
+# full 50k-sample budget ran to completion with no violation. The new seed
+# was found unseeded within ~1M samples (~40s, rust backend) and
+# reproduces the violation on its first trace.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
-  --max-samples=50000 --max-steps=40 --seed=0x1d4e77a47c8ba09e --backend=rust 2>&1); then
+  --max-samples=50000 --max-steps=40 --seed=0x2b196ffb57466d4d --backend=rust 2>&1); then
   echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
   echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
   exit 1
@@ -332,6 +344,37 @@ echo "$park_out" | grep -q 'job-revoked' && echo "$park_out" | grep -q 'RsDepend
 }
 echo "Cascade reproduced: a reachable revoke atomically parks a dependent behind the"
 echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the PR 2 gate)."
+
+# 9b, third probe (PR 3) — stage-advance reachability, expected-fail. The
+# witness stageAdvanceNever ("no eval stage ever advances") MUST be
+# violated on the budgeted instance (MAX_STAGES = 2, so nondet arrivals
+# author multi-stage programs): a reachable eval-stage-passed step — the
+# Evaluating -> Evaluating edge, chuggernaut spec.md §2.1 line 832 — is
+# the machine-level proof that the green invariant runs above cover traces
+# where the staged interpreter and the measure's stage digit actually
+# fire; a fleet that only ever drew single-stage programs would leave both
+# unexercised. The unit tests walk the advance deterministically; this
+# pins it as REACHABLE. (Old PR 1-2 seeds cannot cover this — the label
+# did not exist; probe and seed are PR 3-new, found unseeded within ~25k
+# samples.)
+if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
+  --invariant=stageAdvanceNever \
+  --max-samples=20000 --max-steps=40 --seed=0x9180927e576bcf85 --backend=rust 2>&1); then
+  echo "FAIL: stageAdvanceNever unexpectedly HELD on mc_chuggy_budgeted —" >&2
+  echo "      no reachable eval stage ever advances (the staged interpreter may be vacuous)" >&2
+  exit 1
+fi
+echo "$stage_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_chuggy_budgeted stage probe failed for a reason other than the expected violation:" >&2
+  echo "$stage_out" | tail -5 >&2
+  exit 1
+}
+echo "$stage_out" | grep -q 'eval-stage-passed' || {
+  echo "FAIL: stageAdvanceNever violation trace lacks the eval-stage-passed signature" >&2
+  exit 1
+}
+echo "Stage advance reproduced: a reachable multi-stage program passes a non-final"
+echo "stage and spawns the next (the PR 3 interpreter and stage digit are exercised)."
 
 echo
 echo "=== All checks passed ==="

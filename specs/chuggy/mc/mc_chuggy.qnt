@@ -54,6 +54,21 @@
 /// witness-hardening PR: the deterministic layer, including the new
 /// multi-repo witness module, is the gate).
 ///
+/// MERGE-QUEUE + LANDING PR (roadmap PR 5): every instance runs WITH THE
+/// GATE AND GROUPING ENABLED — no new const (the gate needs none:
+/// occupancy is a phase; grouping is bounded by N_TICKETS). The nondet
+/// surface changed AGAIN: the old `land` action (one draw of moved + one
+/// of outcome) became `gateEnter` (dequeue: a moved draw whose quiet arm
+/// fast-paths SquashMerge in one step and whose moved arm opens the gate)
+/// + `gateResolve` (the gated draw from landOutcomes(true) = AdvanceDefault
+/// or Failed), and `absorb` joined the any{} roster (a (lead, member) pair
+/// draw among same-repo Pending pairs). allInvariants gained
+/// gatedPromotesDirectSquashes, gateDepthOne, and batchWellFormed;
+/// landingExclusive and landingIsolation were extended in place (marked
+/// Done members; the path iff + the fan-out arm). Every 9b-RND seed was
+/// re-examined once more — forensics in scripts/check.sh (warn-only: the
+/// deterministic layer, now EIGHT modules, is the gate).
+///
 /// Imports are not re-exported by the chuggy_domain instance, so each
 /// module pulls the vocabulary (constructors used in --invariant
 /// expressions and in the instantiation itself) from chuggy_measure

@@ -89,6 +89,50 @@
 ///     nondet events, never a stored mystery flag). The measure reads
 ///     none of it.
 ///
+/// THE MERGE-QUEUE + LANDING PR (chuggy-charter.md §6 roadmap PR 5 —
+/// deliberately LAST of the first-class four; gate: driven by
+/// `landing/requirements`, which was NEVER answered, so every requirement
+/// the mechanics serve is PROPOSED, derived from chuggernaut's own spec
+/// and v1's machine-checked findings, pending geoff/davemo88 confirmation
+/// — specs/chuggy/README.md, the proposed-requirements section) reworked
+/// this file FIRST, per standing rule 1 — the seventh time the rule held,
+/// and the first since PR 3 that it held by SURGERY rather than proof:
+/// the rank ladder grew twice.
+///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+///     spec.md §3.3 Merge Gate, Serialization: "the gate is a merge queue
+///     of depth 1: at most one job per project is in the gate at a time";
+///     per-project becomes per-repo at chuggy's landing boundary). A NEW
+///     rank between Landing and settled: entering the gate descends, and
+///     every gate resolution (AdvanceDefault, the priced eviction, the
+///     walls) descends from there exactly as it used to from Landing.
+///     PLanding is re-read as the ENQUEUED state (chuggernaut's
+///     WrapUp-on-the-queue); the queue's ORDER is deliberately not
+///     modeled (a queue is a §2 non-goal; chuggernaut itself loses FIFO
+///     order across restarts — spec.md §3.6 step 3 rebuilds the queue
+///     from state, not from order).
+///   - PBatched — the pre-work GROUPING phase (chuggernaut spec.md §2.1
+///     "Batches"; v1 table.qnt lines 27-30), RE-SITED by the notes
+///     follow-up (docs/chuggy-notes-triage.md, recorded row, verbatim:
+///     "Batched from Ready or Blocked"): it enters from PPending — the
+///     released pre-work state whose Ready/Blocked split is derived —
+///     NOT from authoring (v1: Frozen -> Batched). Slotted directly
+///     ABOVE Pending: chuggernaut's own description ("Invisible to
+///     scheduling, holds no branch of its own, cannot be claimed or
+///     released — like Draft") argues the Draft-adjacent tier, and the
+///     slot prices the two exits as descents (Batched -> Done at the
+///     group's landing; Batched -> Pending when the group dissolves)
+///     while the ENTRY (absorption) is the one climb — the new bounded
+///     BATCHING set below.
+///   - `Ticket.batch` (BatchMark) — the authored/operator group mark on a
+///     member. NOT a measure input, like `repo`: no digit, weight, or
+///     account radix reads it (batch-blindness, pinned in
+///     tests/chuggy_test.qnt measureBatchBlindTest); only the PHASE
+///     (PBatched) has a rank. No per-group account exists.
+///   - microBound's multiplier re-derived, not edited: the ceiling is
+///     still rankDraft, now 7 (5 + the two new rungs), so the multiplier
+///     rose 6 -> 8 through radix(rankCeiling) — the notes PR's
+///     magic-number audit paying rent.
+///
 /// The measure is LEXICOGRAPHIC over the bounded accounts, most significant
 /// first, flattened into one nonnegative integer by radix weighting (every
 /// digit is bounded by its radix, so the integer order IS the lexicographic
@@ -105,11 +149,15 @@
 ///                       (ReworkPolicy = RWBudget(n), notes PR).
 ///   4. micro          — within-cycle progress, THREE sub-digits (PR 3),
 ///                       lexicographic:
-///                       phaseRank   (Draft 5, the only authoring phase,
-///                                    directly above the released pipeline —
-///                                    Frozen removed by the notes;
-///                                    Pending 4 > Working 3 > Evaluating 2 >
-///                                    Landing 1 >
+///                       phaseRank   (Draft 7, the only authoring phase, the
+///                                    ceiling — Frozen removed by the notes;
+///                                    Batched 6, the pre-work grouping tier
+///                                    directly above the released pipeline
+///                                    — the merge-queue PR;
+///                                    Pending 5 > Working 4 > Evaluating 3 >
+///                                    Landing 2 (enqueued) >
+///                                    Gated 1 (the depth-1 merge gate,
+///                                    occupied — the merge-queue PR) >
 ///                                    Done/Escalated/Revoked 0 — the settled
 ///                                    tier, one member fewer since Stalled
 ///                                    merged into Escalated)
@@ -176,10 +224,12 @@
 ///     — micro = rank*rankWeight + stagesLeft*stageWeight + runningCount
 ///            <= rankCeiling*rankWeight + (rankWeight - 1)
 ///             < radix(rankCeiling)*rankWeight.
-///       CHANGED by the notes PR: the rank ceiling is rankDraft = 5 now
-///       (Frozen removed compressed the ladder; it was 6 since PR 2), so
-///       the multiplier fell from 7 to 6 — written as radix(rankCeiling) so
-///       it can never silently drift from the ladder again.
+///       CHANGED by the notes PR (ceiling 6 -> 5, multiplier 7 -> 6:
+///       Frozen removed compressed the ladder) and AGAIN by the
+///       merge-queue PR (ceiling 5 -> 7, multiplier 6 -> 8: two new rungs,
+///       Gated below Landing and Batched above Pending) — each time
+///       written as radix(rankCeiling), so the multiplier re-derives from
+///       the ladder and can never silently drift from it.
 /// The domination chain above micro is unchanged in shape: micro <
 /// microBound, so one unit of reworkLeft outweighs any within-cycle climb
 /// (radix microBound), one unit of gateLeft outweighs any reworkLeft refill
@@ -196,22 +246,27 @@
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
-///   ticket-released                        rank 5->4 (authoring: release —
-///                                       Draft straight into the pipeline;
+///   ticket-released                        rank 7->5 (authoring: release —
+///                                       Draft straight into the pipeline,
+///                                       skipping the Batched rung, which
+///                                       only absorption enters;
 ///                                       Ready/Blocked stay derived)
-///   ticket-revoked (from any rank>0 phase) rank {5,4,3,2,1}->0, stage digit
-///                                       and live tasks cleared (retired to
-///                                       the record, which the measure does
-///                                       not read); every dependent the
-///                                       atomic cascade parks adds its own
-///                                       rank {5,4}->0 drop (see the
-///                                       AUTHORING set for the desk-only
-///                                       flat case)
+///   ticket-revoked (from any rank>0 phase) rank {7,6,5,4,3,2,1}->0, stage
+///                                       digit and live tasks cleared
+///                                       (retired to the record, which the
+///                                       measure does not read); every
+///                                       dependent the atomic cascade parks
+///                                       adds its own rank {7,6,5}->0 drop,
+///                                       and every RELEASED member of a
+///                                       revoked lead adds a rank 6->5 drop
+///                                       (the merge-queue PR's dissolution
+///                                       — see the AUTHORING set for the
+///                                       desk-only flat case)
 ///   dispatch                            gas -1 (micro also falls:
-///                                       rank 4->3 dominates the spawn:
+///                                       rank 5->4 dominates the spawn:
 ///                                       −rankWeight + nTasks < 0)
 ///   task-done (a running task resolves) task count -1
-///   work-passed                         rank 3->2 (dominates the stage
+///   work-passed                         rank 4->3 (dominates the stage
 ///                                       digit appearing at L <= maxStages
 ///                                       AND the stage-0 fan-out spawn —
 ///                                       the rankWeight bound above.
@@ -228,30 +283,51 @@
 ///                                         spawns r <= fanout running, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
-///   ticket-escalated work_failed           rank 3->0 (cycle-level resolution:
+///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
 ///                                       the fabric already retried below
 ///                                       the cycle via trusted backoffLimit)
-///   eval-passed (the FINAL stage        rank 2->1 AND stagesLeft 1->0
-///     passes)
+///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
+///     passes)                             ticket ENQUEUES for the gate —
+///                                         PLanding is the queued state)
+///   gate-opened (merge-queue PR: the    rank 2->1 (the dequeue: the ticket
+///     dequeue occupies the repo's         takes the repo's depth-1 slot;
+///     depth-1 gate — drawn only when      no account moves — the gate
+///     the branch MOVED; a quiet dequeue   charges nothing until it fails)
+///     lands directly in the same step,
+///     the fast-path ticket-done below)
 ///   rework-started eval_failure         gas -1 AND reworkLeft -1 (the
-///     (a stage FAILS: the short-circuit   micro reset — rank 2->3, stage
+///     (a stage FAILS: the short-circuit   micro reset — rank 3->4, stage
 ///     — later stages never spawn)         digit ->0, work respawn — is
 ///                                         dominated by the account drop)
-///   ticket-escalated rework_budget_exhausted rank 2->0 (and stage digit ->0)
-///   ticket-escalated gas_exhausted         rank {2,1}->0
-///   ticket-done                            rank 1->0
-///   rework-started gate_failure         gas -1 (AND gateLeft -1 when Budgeted)
+///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
+///   ticket-escalated gas_exhausted         rank {3,2,1}->0
+///   ticket-done                            rank {2,1}->0 (2: the quiet
+///                                       fast-path SquashMerge straight off
+///                                       the queue; 1: the gated
+///                                       AdvanceDefault out of the gate —
+///                                       the §5e path rule), PLUS a rank
+///                                       6->0 drop per Batched member the
+///                                       group's landing completes (the
+///                                       merge-queue PR's fan-out)
+///   rework-started gate_failure         gas -1 (AND gateLeft -1 when
+///                                       Budgeted); from PGated since the
+///                                       merge-queue PR — the eviction
+///                                       frees the gate by phase (rank
+///                                       1->4 climb + respawn, dominated
+///                                       by the gas drop)
 ///   ticket-escalated gate_budget_exhausted rank 1->0 (Budgeted only)
-///   ticket-escalated revalidation_failed   rank 4->0 (the pre-work park —
+///   ticket-escalated revalidation_failed   rank 5->0 (the pre-work park —
 ///                                       Escalated is THE parked phase now;
 ///                                       the wall name survives as the
 ///                                       reason)
 ///   operator-retry, whenever it charges gas -1 (dominates the rank climb
-///     gas (RWorking always — standing     back to 3/2/1 + respawn — for the
+///     gas (RWorking always — standing     back to 4/3/2 + respawn — for the
 ///     rule 2; REvaluating/RLanding        REvaluating resume that includes
 ///     under RetryCharged)                 the stage digit reappearing at L:
 ///                                         the whole climb is < microBound,
-///                                         which gas outweighs)
+///                                         which gas outweighs; RLanding
+///                                         re-ENQUEUES — resumes to
+///                                         PLanding, never into the gate)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -308,19 +384,37 @@
 ///                       below the table's grain).
 ///     ticket-revoked, desk-only (= 0: revoking an already-parked ticket —
 ///                       Escalated is rank 0, so nothing falls when no
-///                       dependent gets parked by the cascade. Bounded:
-///                       PRevoked is absorbing, so each such step
-///                       permanently settles one ticket — at most N_TICKETS
-///                       ever.)
+///                       dependent gets parked by the cascade AND no member
+///                       gets released by the dissolution (either makes the
+///                       step strictly descend). Bounded: PRevoked is
+///                       absorbing, so each such step permanently settles
+///                       one ticket — at most N_TICKETS ever.)
+///
+///   BATCHING (merge-queue PR — the grouping churn above the pipeline;
+///   bounded by name, like AUTHORING):
+///     ticket-batched    (+rankWeight: absorption lifts the member one rung,
+///                       Pending 5 -> Batched 6 — the member suspends its
+///                       own progress and hands its fate to the lead.
+///                       Bounded: a member re-enters Pending only when its
+///                       lead SETTLES (revoke — PRevoked is absorbing), so
+///                       a ticket's absorptions ever <= 1 + its leads
+///                       settled, and total ticket-batched steps <=
+///                       N_TICKETS + N_TICKETS revokes = 2 * N_TICKETS.
+///                       Deterministic witness: the absorb step of
+///                       tests/chuggy_witness_test.qnt's batch module —
+///                       the stepDescends convention roster.)
 ///
 /// PER-TICKET LIVENESS, SKETCHED — CONDITIONAL ON AUTHORS (roadmap PR 1 gate,
 /// extended by PR 2; PR 3 changed digits, the notes PR changed the
-/// authoring boundary, neither changed the argument): ticketMeasure is a
-/// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING step
+/// authoring boundary, the merge-queue PR added the bounded BATCHING set —
+/// none changed the argument): ticketMeasure is a
+/// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING
+/// non-BATCHING step
 /// strictly decreases the sum of ticketMeasure over all tickets, each CHURN step
 /// requires an operator acting on a desk-visible ticket (domain.qnt
-/// `deskVisibility`), and each AUTHORING step is bounded by the arrival
-/// cap. So under default metering, any run with finitely many stutter and
+/// `deskVisibility`), and each AUTHORING or BATCHING step is bounded by the
+/// arrival cap (BATCHING's bound rides revokes — see the set). So under
+/// default metering, any run with finitely many stutter and
 /// churn events IN WHICH EVERY AUTHOR EVENTUALLY SETTLES EACH DRAFT — every
 /// Draft is eventually released or revoked — parks every ticket in Done,
 /// Escalated, or Revoked. The conditionality is exact and deliberate: a
@@ -341,7 +435,9 @@ module chuggy_measure {
   // PR 3 added TK (TaskKind); the notes PR adds TS (TaskState — the
   // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
   // one TS constructor (TSCarried) and no new prefix; the multi-repo PR
-  // adds LO (LandingObs — the landing-boundary attribution).
+  // adds LO (LandingObs — the landing-boundary attribution); the
+  // merge-queue PR adds B (BatchMark — BNone/BUnder; the letter is shared
+  // with the bare GatePricing constructor Budgeted, the NAMES are not).
 
   /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
   /// don't store): Blocked and Ready are PREDICATES over deps + record in
@@ -373,16 +469,37 @@ module chuggy_measure {
   ///     absorbing. PRevoked is absorbing, runs nothing, never lands, and
   ///     opens NO human task (revocation is the author's settled choice —
   ///     see hasOpenHumanTask).
-  ///   - Batched (table lines 27-30) is deliberately NOT transcribed:
-  ///     deferred to PR 5 with the merge queue it belongs to — re-sited by
-  ///     the notes follow-up to enter from PPending, the released pre-work
-  ///     state (specs/chuggy/README.md, deliberately-absent table).
   /// PR 3 deliberately added NO phase: a stage advance is an
   /// Evaluating -> Evaluating edge (chuggernaut spec.md §2.1 line 832) —
   /// within-phase progress lives in the stage digit, not in new phases.
+  ///
+  /// THE MERGE-QUEUE PR adds exactly two (header, merge-queue note):
+  ///   - PBatched — the pre-work GROUPING phase (chuggernaut spec.md §2.1
+  ///     Batches; v1 table lines 27-30, whose Frozen->Batched entry is
+  ///     deliberately NOT transcribed): a member absorbed into a group led
+  ///     by another ticket, ENTERED FROM PPENDING per the notes follow-up
+  ///     ("Batched from Ready or Blocked" — the re-siting, binding). Like
+  ///     Draft in chuggernaut's own words ("invisible to scheduling,
+  ///     cannot be claimed or released — like Draft"): runs nothing, holds
+  ///     no tasks, spends nothing. Exits: the group's single landing
+  ///     completes it (-> PDone, the fan-out), the lead's revoke releases
+  ///     it (-> PPending, re-batchable), the cascade parks it doomed, or
+  ///     its own revoke settles it.
+  ///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+  ///     §3.3 Merge Gate item 3 + Serialization). PLanding is re-read as
+  ///     ENQUEUED (chuggernaut's WrapUp holds both queue and gate slot in
+  ///     ONE state, the split living in dispatcher memory — the model
+  ///     lifts the slot into phase so depth-1 exclusivity is a predicate
+  ///     over stored state, while the queue's ORDER stays deliberately
+  ///     unmodeled). A ticket is PGated only when the environment chose
+  ///     its branch MOVED at the dequeue — a quiet dequeue lands directly
+  ///     (the fast-path) and never occupies the gate — so PGated ENCODES
+  ///     branchMoved = true with no stored flag (the envActive standing
+  ///     rule, derived-not-stored applied to the environment's choice).
   type Phase =
     PDraft |
-    PPending | PWorking | PEvaluating | PLanding |
+    PBatched |
+    PPending | PWorking | PEvaluating | PLanding | PGated |
     PDone | PEscalated | PRevoked
 
   /// What a task IS for (PR 3, task-records depth — charter §2 job anatomy:
@@ -550,12 +667,25 @@ module chuggy_measure {
 
   /// How a landing resolves. The two SUCCESS outcomes are deliberately
   /// distinct from day one — v1's single conformance divergence was exactly
-  /// AdvanceDefault vs SquashMerge (charter §2 landing row); mechanics stay
-  /// abstract until landing/requirements is answered (roadmap PR 5).
-  /// Multi-repo PR: which outcomes the environment may DRAW for an attempt
-  /// depends on its branchMoved choice — domain.qnt landOutcomes (a quiet
-  /// branch always lands cleanly, so LandFailed is drawable only on a
-  /// moved branch).
+  /// AdvanceDefault vs SquashMerge (charter §2 landing row) — and since
+  /// the merge-queue PR the model SAYS WHICH FIRES WHEN (the §5e
+  /// divergence as a theorem, not a footnote — model-status.md §5e:
+  /// "promotion happens by fast-forwarding the default branch onto the
+  /// validated squash candidate, and no SquashMerge effect exists"):
+  ///   - quiet branch  -> the gate is SKIPPED and the candidate
+  ///     squash-merges DIRECTLY (chuggernaut §3.3 Merge Gate item 1, the
+  ///     skip fast-path) — LandSquashMerge, the ONLY quiet outcome;
+  ///   - moved branch  -> the gate RUNS against the candidate merge
+  ///     commit, and a clean pass ADVANCES the default ref to the
+  ///     already-merged candidate (§3.3 item 4: "advance the default
+  ///     branch to the candidate commit — this IS the squash-merge; do
+  ///     not re-merge") — LandAdvanceDefault — while a failure is the
+  ///     priced eviction — LandFailed.
+  /// domain.qnt landOutcomes is the draw rule; landingIsolation +
+  /// gatedPromotesDirectSquashes make it durable on every reachable step.
+  /// PROPOSED-requirement provenance (R3, README): derived from
+  /// chuggernaut's spec + v1's replay finding, NOT from an intake answer —
+  /// pending geoff/davemo88 confirmation.
   type LandOutcome = LandAdvanceDefault | LandSquashMerge | LandFailed
 
   /// THE LANDING-BOUNDARY OBSERVATION (multi-repo PR — the roadmap PR 4
@@ -580,6 +710,24 @@ module chuggy_measure {
   /// landingIsolation invariant (domain.qnt).
   type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
 
+  /// THE GROUP MARK (merge-queue PR — chuggernaut spec.md §2.1 Batches,
+  /// the `batch_id` field re-read at chuggy's grain): BUnder(l) marks a
+  /// ticket ABSORBED as a member of the group ticket l leads. Chuggy's
+  /// lean reading of chuggernaut's batch-is-its-own-job: the group's
+  /// carrier is an ORDINARY ticket (the lead) that absorbs other released
+  /// pre-work tickets, rather than a new job kind — no new arrival
+  /// machinery, and the lead's own program stands in for chuggernaut's
+  /// eval-criteria union (a documented abstraction, README). Membership is
+  /// DERIVED from the marks (domain.qnt membersOf — derive-don't-store:
+  /// the lead stores no member list, exactly as chuggernaut's `members`
+  /// vector is the stored side and `batch_id` the mark; chuggy keeps only
+  /// the mark). The mark SURVIVES completion (chuggernaut: "Some implies
+  /// the member is (or was) Batched"; cleared only when the group
+  /// dissolves) — which is what lets landingExclusive read a marked Done
+  /// ticket as completed-via-group, no landing effect of its own.
+  /// NOT a measure input (batch-blindness — header note).
+  type BatchMark = BNone | BUnder(int)
+
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
     phase: Phase,
@@ -600,6 +748,15 @@ module chuggy_measure {
     // theorem — derivation in this file's multi-repo header note), and no
     // budget is per-repo (deliberately: no charter provenance — README).
     repo: int,
+    // THE GROUP MARK (merge-queue PR): BNone for an ordinary ticket and
+    // for every lead (leads are unmarked — no nesting, made durable by
+    // domain.qnt batchWellFormed); BUnder(l) on a member absorbed under
+    // lead l (phase PBatched) and RETAINED on a member the group's
+    // landing completed (phase PDone, landings 0 — completed via the
+    // group's single effect). Set by absorption, cleared by dissolution
+    // (lead revoked -> back to PPending), by the cascade park, and by the
+    // member's own revoke. NOT a measure input (batch-blindness).
+    batch: BatchMark,
     // PR 3: THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // arrives with the Draft (which is exactly why authoring came first,
     // first-class order charter §2) and is immutable after arrival, like
@@ -757,21 +914,34 @@ module chuggy_measure {
   /// The settled tier: Done, Escalated, Revoked — one member fewer since
   /// Stalled merged into Escalated (notes PR). Nothing is below settled.
   pure val rankSettled: int = 0
-  /// PLanding sits directly above settled: a landing resolves into Done or
-  /// a wall.
-  pure val rankLanding: int = rankSettled + 1
+  /// The occupied depth-1 merge gate sits directly above settled
+  /// (merge-queue PR): every gate resolution — the gated AdvanceDefault,
+  /// the priced eviction, the walls — settles or reworks in one step.
+  pure val rankGated: int = rankSettled + 1
+  /// PLanding — ENQUEUED for the gate since the merge-queue PR: the
+  /// dequeue (gate-opened) descends into the gate, the quiet fast-path
+  /// descends straight to Done.
+  pure val rankLanding: int = rankGated + 1
   pure val rankEvaluating: int = rankLanding + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The ONLY authoring phase, directly above the released pipeline —
-  /// Frozen removed by the notes ("Frozen removed. Draft -> Ready/
-  /// Blocked"), which compressed the ladder: release descends 5 -> 4.
-  pure val rankDraft: int = rankPending + 1
+  /// The pre-work grouping tier (merge-queue PR): a Batched member's own
+  /// progress is suspended — its exits (the group's landing -> settled,
+  /// the dissolution -> Pending) both descend, and the one climb is the
+  /// absorption entry (the BATCHING set). Slotted Draft-adjacent on
+  /// chuggernaut's own analogy ("cannot be claimed or released — like
+  /// Draft", spec.md §2.1).
+  pure val rankBatched: int = rankPending + 1
+  /// The ONLY authoring phase, the ladder's top — Frozen removed by the
+  /// notes ("Frozen removed. Draft -> Ready/Blocked"); release descends
+  /// 7 -> 5, over the Batched rung that only absorption enters.
+  pure val rankDraft: int = rankBatched + 1
   /// The ladder's ceiling — the highest rank any phase takes (PDraft).
-  /// microBound's multiplier is radix(rankCeiling), so the notes PR's rank
-  /// compression (6 -> 5) propagated to the multiplier (7 -> 6) by
-  /// derivation, not by editing a literal.
+  /// microBound's multiplier is radix(rankCeiling): the notes PR's
+  /// compression (6 -> 5) and the merge-queue PR's two new rungs (5 -> 7)
+  /// each propagated to the multiplier (7 -> 6 -> 8) by derivation, not by
+  /// editing a literal.
   pure val rankCeiling: int = rankDraft
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
@@ -781,10 +951,12 @@ module chuggy_measure {
   pure def phaseRank(p: Phase): int =
     match p {
       | PDraft => rankDraft
+      | PBatched => rankBatched
       | PPending => rankPending
       | PWorking => rankWorking
       | PEvaluating => rankEvaluating
       | PLanding => rankLanding
+      | PGated => rankGated
       | _ => rankSettled
     }
 

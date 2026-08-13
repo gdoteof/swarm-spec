@@ -100,6 +100,9 @@ chuggy:
     npx quint test --main=chuggy_witness_stage_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_carry_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_multirepo_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_gate_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_gate_deadline_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_batch_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40

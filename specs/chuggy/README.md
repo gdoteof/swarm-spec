@@ -1,4 +1,4 @@
-# specs/chuggy — the chuggy-model (PRs 1–4 + the notes reconciliation + citations)
+# specs/chuggy — the chuggy-model (PRs 1–5 + the notes reconciliation + citations)
 
 The fresh Quint model for **chuggy**, written *before* the system it
 specifies. Requirements and provenance: [docs/chuggy-charter.md](../../docs/chuggy-charter.md).
@@ -18,17 +18,17 @@ traces ship from here as versioned artifacts.
 
 | File | Module | What it is |
 |---|---|---|
-| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-ticket well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The multi-repo PR is likewise **vocabulary, not digits**: `Ticket.repo` (the authored target) and the StepRecord's `landing` field (`LandingObs` — landing-boundary attribution: the attempt's repo + the environment's per-attempt `branchMoved` choice); the measure reads neither — repo-blindness is a header derivation (no digit, weight, or account radix touches `repo`; all radices derive from machine-wide consts), machine-pinned by `measureRepoBlindTest`. The machine was designed to fit this file. |
-| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. Multi-repo PR (roadmap PR 4): a ticket targets **exactly one repo** — `repo`, authored at arrival from `1..N_REPOS` (`repos` is the refusal rule) and immutable, with deps free to **cross repos** (the dep gate is Done-ness, not location); the `land` action draws the environment's per-attempt **`branchMoved`** choice and the outcome from `landOutcomes(moved)` — a quiet branch cannot fail (the envActive standing rule as a named nondet event, no stored flag); `decideLand` stamps every arm with the attempt's own-repo attribution; gate invariants `landingIsolation`, `quietRepoLandsCleanly`, `reposWellFormed`. |
-| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. Multi-repo PR: all four run **with repos enabled** (`N_REPOS = 2`: arrivals draw the authored target repo, landing attempts draw `branchMoved` — the smallest universe where own-repo attribution is distinguishable from a constant stamp). |
-| `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark. |
-| `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test`, `chuggy_witness_multirepo_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). The multi-repo module (PR 4) carries the isolation gate's witness half — the machine's two new nondet draws each exercised on both branches: the landing choice pinned **quiet** (the landing succeeds, attributed), pinned **moved** (the gate rework AND the gate-budget wall carry `{repo, branchMoved: true}`), and the repo pick exercised off-default with a **cross-repo dep chain** (a repo-1 landing flips its repo-2 dependent to Ready in the same post-state — the dep gate proved location-blind on a machine trace). It has **no paired random probe**: landing attempts are dense in random exploration (unlike the carry), so the unseeded Stage 9 runs are its random side. |
+| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-ticket well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The multi-repo PR is likewise **vocabulary, not digits**: `Ticket.repo` (the authored target) and the StepRecord's `landing` field (`LandingObs` — landing-boundary attribution: the attempt's repo + the environment's per-attempt `branchMoved` choice); the measure reads neither — repo-blindness is a header derivation (no digit, weight, or account radix touches `repo`; all radices derive from machine-wide consts), machine-pinned by `measureRepoBlindTest`. The merge-queue PR (roadmap PR 5) reworked this file **first again**, by surgery: two new rungs on the named ladder — `PGated` (the occupied depth-1 gate, between Landing and settled) and `PBatched` (the pre-work grouping tier, between Pending and Draft) — so `rankCeiling` rose 5 → 7 and `microBound`'s multiplier 6 → 8 **by derivation** (`radix(rankCeiling)`, never an edited literal); plus the `BatchMark` vocabulary (`Ticket.batch` — NOT a measure input: batch-blindness, pinned by `measureBatchBlindTest`) and the descent-table rows for the dequeue, the fast-path, the fan-out, and the new bounded **BATCHING** climb set (absorption, `+rankWeight`, bounded by lead settlements). The machine was designed to fit this file. |
+| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. Multi-repo PR (roadmap PR 4): a ticket targets **exactly one repo** — `repo`, authored at arrival from `1..N_REPOS` (`repos` is the refusal rule) and immutable, with deps free to **cross repos** (the dep gate is Done-ness, not location); the `land` action draws the environment's per-attempt **`branchMoved`** choice and the outcome from `landOutcomes(moved)` — a quiet branch cannot fail (the envActive standing rule as a named nondet event, no stored flag); `decideLand` stamps every arm with the attempt's own-repo attribution; gate invariants `landingIsolation`, `quietRepoLandsCleanly`, `reposWellFormed`. Merge-queue PR (roadmap PR 5; every mechanic cites its **proposed requirement** R1–R7 by name — the severability rule): the landing is a **path** now — `eval-passed` enqueues (`PLanding`), the dequeue (`gateEnter`, routing hoisted into `decideDequeue` per the adversarial review) draws `branchMoved` per attempt (quiet → the skip fast-path lands `SquashMerge` in the same step; moved → `gate-opened`, the repo's depth-1 slot `PGated`), and the gated resolution (`gateResolve`) draws from `landOutcomes(true)` — `AdvanceDefault` (the validated candidate promoted) or the GatePricing-priced eviction; plus the **group**: `decideAbsorb` (Batched re-sited: `PPending → PBatched`, guard `absorbableIn`), the dep-union dispatch gate (`groupDeps`), the completion fan-out inside `landSuccess`, and the dissolution/park arms in `decideRevoke`; new invariants `gatedPromotesDirectSquashes`, `gateDepthOne`, `batchWellFormed`; visibility walks became group-aware bounded-sweep fixpoints. |
+| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. Multi-repo PR: all four run **with repos enabled** (`N_REPOS = 2`: arrivals draw the authored target repo, landing attempts draw `branchMoved` — the smallest universe where own-repo attribution is distinguishable from a constant stamp). Merge-queue PR: all four run **with the gate and grouping enabled at no new const** (occupancy is a phase; grouping is bounded by `N_TICKETS`): the `land` draw became `gateEnter` (the dequeue's `branchMoved` draw — quiet fast-paths, moved occupies) + `gateResolve` (the gated outcome), and `absorb` joined the `any{}` roster drawing same-repo Pending pairs — the nondet surface changed yet again; every 9b-RND seed re-examined (forensics in `scripts/check.sh`). |
+| `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark — and the merge-queue suite: the path rule pinned as the outcome sets themselves, the depth-1 refusal (same-repo refused, cross-repo independent), the eviction fixtures re-sited to `PGated` with byte-identical deltas, absorption from Ready and Blocked with every refusal (including the lead-never-absorbs-its-own-dependency safety rule), the dep union, the fan-out on both paths, dissolution, park-wins, and batch-blindness. |
+| `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test`, `chuggy_witness_multirepo_test`, `chuggy_witness_gate_test`, `chuggy_witness_gate_deadline_test`, `chuggy_witness_batch_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). The multi-repo module (PR 4) carries the isolation gate's witness half — the machine's two new nondet draws each exercised on both branches: the landing choice pinned **quiet** (the landing succeeds, attributed), pinned **moved** (the gate rework AND the gate-budget wall carry `{repo, branchMoved: true}`), and the repo pick exercised off-default with a **cross-repo dep chain** (a repo-1 landing flips its repo-2 dependent to Ready in the same post-state — the dep gate proved location-blind on a machine trace). It has **no paired random probe**: landing attempts are dense in random exploration (unlike the carry), so the unseeded Stage 9 runs are its random side. The merge-queue PR (PR 5) added modules six through eight, extending this layer first per its convention: the **gate module** pins the depth-1 exclusivity as a **guard-refusal on a machine trace** (the second same-repo ticket's dequeue disabled while the slot is held, enabled again the step it frees), lands **both success effects on one trace**, each from its own path (gated `AdvanceDefault`, then quiet fast-path `SquashMerge` — the §5e theorem witnessed), and carries the **quiet fast-path as its own witnessed run** — SquashMerge reachability pinned against the hoisted routing decider `decideDequeue` (adversarial review MAJOR 1: the quiet/moved route is a decider both the `gateEnter` action and the `doDequeue` drivers reference, never an inline composition a mutant could re-route silently); the **deadline-only module** walks the eviction on the other GatePricing branch — two gas-only gate failures into the gas wall, v1's §5a gate-loop shape reproduced with the backstop doing its job; the **batch module** fires the `ticket-batched` BATCHING climb (the stepDescends convention roster), absorbs from Ready **and** Blocked (the note's both flavors), pins the union gating the lead, the completion fan-out (the member's cross-repo dependent Ready in the same post-state), and the dissolution. Like the multi-repo module, none has a paired random probe. |
 
 Checked by `scripts/check.sh` Stage 9 + 9b and `just chuggy`. **The
 two-layer witness policy** (Stage 9b, the witness-hardening PR — after the
 citations PR forced the fourth consecutive `freeClimbNever` seed re-pin):
 
-- **9b-DET, the deterministic layer — gates the build.** The five
+- **9b-DET, the deterministic layer — gates the build.** The eight
   machine-trace modules above (`quint test --main=<module>`): reachability
   of each witnessed shape plus `allInvariants` along its whole trace,
   immune to nondet drift, seeds nowhere. This layer guards **semantics** —
@@ -231,6 +231,115 @@ landing boundary (work/eval never read the repo). `N_REPOS = 1` recovers
 the single-repo machine exactly: every draw collapses and the
 attribution field goes constant.
 
+## The merge-queue + landing PR — one gate, one group, seven proposed requirements
+
+Roadmap **PR 5**, deliberately **last** of the first-class four (charter
+§2 first-class-order row: "Merge-queue deliberately last", consistent with
+kasofsk's "wrapup phase needs thought"). Its roadmap gate reads "driven by
+`landing/requirements`, once answered" — and that question **was never
+answered**: geoff and davemo88 both answered `landing/semantics =
+undecided`, kasofsk wrote only "wrapup phase needs thought", and the
+charter's landing row records the deferral as **deliberate** ("Deferred by
+choice... the model keeps landing mechanics abstract but names outcomes
+precisely"). This PR therefore lands under a constraint no earlier PR
+carried, stated here so nobody mistakes the provenance:
+
+> **PROPOSED / UNCONFIRMED.** Every requirement in the table below is
+> **derived** — from chuggernaut's own `docs/spec.md` and from v1's
+> machine-checked findings — **not decided by geoff or davemo88**, and
+> each is **pending their confirmation**. These are the modeler's best
+> derivation of what `landing/requirements` would have said, offered as
+> the concrete artifact to confirm, amend, or tear up. Where a row leans
+> on something already decided (a charter §2 row, a binding triage note),
+> the provenance column says exactly which part is decided and which is
+> proposed. Nothing below is presented as their decision.
+
+### The proposed requirements (R1–R7)
+
+Every mechanic in the code cites the requirement that forces it **by
+name** (R1…R7), so a torn-up requirement maps to deletable code — the
+severability table after the list.
+
+| # | Proposed requirement | Provenance (derived from) |
+|---|---|---|
+| **R1** | **The default branch is never red.** A commit reaches the default branch only after every required evaluator has passed against the **exact tree that lands**: on a quiet branch the evaluated tree *is* the landing tree (why the fast-path is sound); on a moved branch only the **gate-validated candidate** may land. | chuggernaut spec.md §3.3 Merge Gate, the guarantee sentence verbatim: *"no commit reaches the default branch without every required command evaluator passing against the exact tree that lands"*. Wholly proposed. |
+| **R2** | **One landing per diff — extended to groups.** A ticket's diff lands at most once (decided: charter §2 effect-only exclusivity, proved since PR 1); a **group's** diff lands **exactly once for the whole group** — the lead's single effect; members complete via the fan-out with `landings = 0` and the retained mark as provenance (the proposed extension). | Charter §2 exclusivity row (**decided**, the per-ticket half); chuggernaut §2.1 Batches: *"whose single completion finishes every member"*, *"its single merge completes every member"* (**proposed**, the group half). |
+| **R3** | **Promotion effect is determined by the path.** A gated clean landing **advances the default ref** to the already-merged gate result (`AdvanceDefault`); an ungated/direct landing **squash-merges** (`SquashMerge`); the model emits the right one per path — never a free draw between them. | The outcome **names** are decided (charter §2 landing row). The **rule** is derived from v1's one conformance divergence — model-status.md §5e: promotion under the gate is *"fast-forwarding the default branch onto the validated squash candidate, and no SquashMerge effect exists"*, with trace-conformance §2.4 promising *"the v3 merge-gate model must split the two promotion mechanisms again, at which point this widening disappears"* — and chuggernaut §3.3 items 1 (*"skip the gate; squash-merge directly"*) and 4 (*"advance the default branch to the candidate commit (this **is** the squash-merge; do not re-merge)"*). This PR is that promised split. |
+| **R4** | **The gate runs at depth 1 per repo; queue order is deliberately unspecified.** At most one ticket per repo occupies the merge gate; a second same-repo dequeue is **refused** while the slot is held; gates of different repos are independent. The queue's *order* is not a requirement: any enqueued ticket may dequeue when the slot frees. | chuggernaut §3.3 Serialization: *"the gate is a merge queue of depth 1: at most one job per project is in the gate at a time"* (per-project → per-repo at chuggy's landing boundary). Order-freedom: chuggernaut itself loses FIFO order across restarts (§3.6 step 3 rebuilds the queue from state, not order), and a queue is a charter §2 non-goal (**decided**) — so order is implementation policy refining free choice, like dispatch. |
+| **R5** | **A gate failure re-enters work, priced per `GatePricing` — never a silently free loop.** The eviction spends per the charter's parameter (Budgeted: gate budget + gas; DeadlineOnly: gas alone), and empty accounts park behind named walls. | The pricing **parameter** is decided (charter §2 gate-pricing row: generate traces under both, decide on evidence). The proposed part is the mapping: chuggernaut's gate failure consumes **no** `rework_budget` (§3.3 item 4, §3.3 Bounding: *"`job_deadline` is the backstop"*) — which is exactly the `DeadlineOnly` branch — and v1 **machine-checked** what that costs when the backstop is absent (model-status §5a, the gate-loop livelock; docs/chuggernaut.md §6.2: the spinning ticket held the only slot and *"the queue behind a spinning job starves"*), which is why `Budgeted(n)` stays instantiated beside it. |
+| **R6** | **The gate never wedges; queue wait is accepted unbounded — flagged for confirmation.** Every gate occupancy has an enabled resolution, and every resolution (landing, eviction, wall, revoke) **frees the slot in the same step** — no occupant state exists that cannot resolve, so the queue always advances past its head. What is deliberately **not** guaranteed: a bound on how long an enqueued ticket waits (the dequeue is a nondet pick, and the environment may keep choosing `moved`). **This is the intake question restated**: bounded staleness between eval-pass and landing attempt, or explicit acceptance of unbounded queue wait — the model currently encodes the *acceptance*, and geoff/davemo88 should confirm or demand the bound. | chuggernaut's own never-wedge discipline, three times over: §2.1 WrapUp rows (*"the merge queue advances past the job rather than wedging"*), §3.2 finalization hard failures (*"the merge queue advances past the job instead of stalling"*), §3.6 restart (*"a gate in flight is superseded... the job re-enters the merge queue"*). The starvation half: v1's finding (docs/chuggernaut.md §6.2) that a spinning occupant starves the queue behind it — bounded per-occupant by gas (R5), unbounded across occupants. |
+| **R7** | **Batched enters from the released pre-work state, and a member's only progress is its group's.** `Batched` enters from `PPending` — Ready **or** Blocked — never from authoring; a member never runs, spends nothing, and leaves only via the group's single landing (→ Done), the group's dissolution (→ `PPending`, re-batchable), the cascade's park (doomed), or its own revoke. | The **entry point is binding, not proposed**: docs/chuggy-notes-triage.md, recorded row, verbatim *"Batched from Ready or Blocked"* (the re-siting of v1 table lines 27–30, whose `Frozen → Batched` entry is deliberately not transcribed). The rest is proposed, from chuggernaut §2.1 Batches: *"Invisible to scheduling, holds no branch of its own, cannot be claimed or released — like Draft"*; `Batched → Done` via the batch's merge; *"a revoked or failed batch returns each Batched member"* (re-sited to `PPending` since Frozen is gone — and chuggy's only terminal batch failure **is** revoke, because every wall is a park the operator still owns). |
+
+### The Batched reading — the note, verbatim, against the mechanics
+
+The note (triage, recorded row): **"Batched from Ready or Blocked"** —
+Batched enters from the released pre-work state (`PPending`), **not**
+from authoring as v1's table had it. Three readings were considered:
+
+1. *Batched as the landing-queue phase* (between Evaluating and Landing)
+   — *rejected*: chuggernaut's Batched is unambiguously **pre-work**
+   (§2.1: members are absorbed **before** any execution, "invisible to
+   scheduling", holding no branch; the landing queue is WrapUp's, a
+   different state entirely), and the note's "from Ready or Blocked"
+   names pre-work sources.
+2. *Batched as the gate-occupancy phase* — *rejected for the same
+   reason*: gate occupancy is WrapUp-internal dispatcher memory in
+   chuggernaut, not the Batched state; the model gives occupancy its own
+   phase (`PGated`) instead.
+3. **The adopted reading — Batched as the optional pre-work grouping
+   phase**: a released ticket (either derived flavor — Ready or Blocked)
+   is absorbed as a **member** of a group an ordinary Pending same-repo
+   ticket **leads**; members suspend (run nothing, spend nothing), the
+   lead's dispatch gates on the **dep union minus the group**
+   (chuggernaut §2.1: *"the batch depends on the union of the members'
+   external deps minus the members"* — in-group edges are *"satisfied
+   jointly"* and drop out), and the lead's **single landing completes
+   every member** atomically, each member's dependents unblocking *"as
+   if it had run individually"*.
+
+The adopted reading deviates from chuggernaut in one deliberate way,
+**marked proposed like the requirements**: chuggernaut's batch is a
+**fresh job** that absorbs members; chuggy's is an **absorbed lead** — an
+ordinary ticket carries the group, its own program standing in for the
+eval-criteria union. That keeps the PR lean (no new arrival machinery,
+no program-union semantics) at the cost of one asymmetry chuggernaut
+never faces: an absorbed lead can *have* dependencies, so `absorbableIn`
+refuses a lead absorbing **its own dependency** (the union drop-out would
+let it dispatch over a revocable un-Done dep and a later revoke would
+doom a mid-flight lead — caught by this PR's first random invariant run,
+exactly the way PR 2's tombstone-dep rule was; the jointly-implemented
+edge stays expressible in the safe direction, with the dependency as the
+lead). If the confirmation prefers batch-as-its-own-ticket, the group
+mechanics are severable (below) and the reading swaps without touching
+the gate.
+
+### Severability — requirement → mechanics → what deletion looks like
+
+Standing instruction honored: every proposed-requirement-driven mechanic
+carries a comment naming its requirement, so tearing one up maps to code,
+not archaeology.
+
+| Torn up | Deletable/replaceable, without measure surgery beyond the named rung |
+|---|---|
+| R1/R4 (the gate itself) | `PGated` + its ladder rung, `gateFreeIn`/`gateEnterableIn`/`gatedTickets`/`gateEnterable`, `decideGateOpen`, the `gateEnter`/`gateResolve` actions (restore a one-step `land`), `gateDepthOne`, the path-iff conjunct in `landingIsolation`, the gate witness modules. The measure loses one rung (`rankCeiling` re-derives, 7 → 6). |
+| R3 (the path rule) | `landOutcomes` reverts to the PR 4 sets, `gatedPromotesDirectSquashes` deleted, the effect-per-path conjuncts drop out of tests — outcome **names** stay (charter-decided). |
+| R5's branch mapping | The eviction arms stay (charter-decided parameter); only the DeadlineOnly-is-chuggernaut's-reading commentary moves. |
+| R6's acceptance | Add the wait bound the confirmation demands (a queue-age account or fairness assumption) — new machinery, nothing deleted; the never-wedge half is structural and free. |
+| R2's group half / R7 (the group) | `PBatched` + its rung, `BatchMark`/`Ticket.batch`, `membersOf`/`absorbableIn`/`groupDeps`/`decideAbsorb`, the `absorb` action, the fan-out in `landSuccess` (reverts to single-transition success), the dissolution/park arms in `decideRevoke`, `batchWellFormed`, `landingExclusive`'s mark conjunct, the group edges in the visibility walk (fixpoints revert to single ascending folds), the BATCHING set + `stepDescends` arm, the batch witness module. |
+
+**Deliberately NOT modeled** (no provenance anywhere — not even proposed):
+**merge trains** (chuggernaut's gate validates one candidate at a time;
+nothing stacks candidates), **batching heuristics** (*which* tickets to
+group is the author's/operator's unrestricted nondet choice — any real
+policy refines it, the agentic-dispatcher shape again), and **cross-repo
+atomic landings** (a group is single-repo by `absorbableIn`; nothing
+lands in two repos atomically). Chuggernaut's **staged gate internals**
+(§3.3 item 3: gate stages, deterministic failure classification, the
+gate-fix fast path with its own two-round budget) stay below the model's
+grain — the gate is one abstract verdict; the staging enters only if the
+`landing/requirements` confirmation demands it (the deliberately-absent
+table row).
+
 ## The PR 3 eval vocabulary — extracted, standing in
 
 The intake question `eval/vocabulary` ("write the eval spec for one real
@@ -271,12 +380,16 @@ short-circuit → the same decider's failure arm routing into the **existing**
 rework/escalation economy; the chronological task log → `Ticket.record` with
 history-unique sequential ids; revoke's force-close → `TCancelled`.
 
-## What the model claims (PRs 1–4 + notes + citations)
+## What the model claims (PRs 1–5 + notes + citations)
 
 - **Effect-only exclusivity** (charter §2): any number of task executions
   may run and duplicate — the fabric is at-least-once, `no-double-pods` was
   dropped — but the landing effect is emitted **exactly once per ticket**,
-  proved at the landing boundary (`landingExclusive`) and nowhere else.
+  proved at the landing boundary (`landingExclusive`) and nowhere else —
+  and, since the merge-queue PR (proposed R2), **exactly once per group**:
+  a marked Done ticket completed via its group's single landing, emitted
+  nothing of its own (`landings = 0`, mark retained; `batchWellFormed`
+  pins the marked-Done shape to a landed lead).
   Duplicate task completions and duplicate landing deliveries are
   idempotent no-ops by construction — and PR 3 strengthened the stale
   half: task ids are unique across a ticket's whole history, so a stale
@@ -329,9 +442,38 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
   `dependency_revoked` (PR 2's cascade wall — no modeled resume; its only
   exit is revoke). `deskConsistent` pins reason-iff-parked and
   resume-point-iff-a-modeled-resume-exists.
-- **Landing outcomes precisely named** (charter §2): `AdvanceDefault` ≠
+- **Landing outcomes precisely named — and path-determined** (charter §2
+  names; the merge-queue PR's proposed R3 rule): `AdvanceDefault` ≠
   `SquashMerge` from day one — v1's one conformance divergence lived
-  exactly there. Mechanics stay abstract (PR 5).
+  exactly there — and the model now **says which fires when**: a quiet
+  dequeue skips the gate and squash-merges directly (`SquashMerge`, the
+  only quiet outcome); a moved dequeue opens the gate, and its clean pass
+  advances the default ref onto the validated candidate
+  (`AdvanceDefault`) while its failure is the priced eviction.
+  `landOutcomes` is the draw rule; `gatedPromotesDirectSquashes` +
+  `landingIsolation`'s path-iff make it durable; the gate witness module
+  lands both effects on one machine trace. This is trace-conformance
+  §2.4's promised split, delivered — the v1 allowlist widening can
+  retire when the golden traces regenerate.
+- **The merge gate runs at depth 1 per repo** (proposed R1/R4): at most
+  one ticket per repo occupies the gate (`PGated`; `gateDepthOne` — a
+  derived predicate over phase, no stored queue), a second same-repo
+  dequeue is refused by guard while the slot is held
+  (`gateEnterableIn`, pinned as a machine-trace refusal), gates of
+  different repos are independent, and every resolution — landing,
+  eviction, wall, revoke — frees the slot in the same step (proposed R6:
+  the gate never wedges; queue **order** and queue **wait** are
+  deliberately unbounded nondet, flagged for confirmation).
+- **Grouping is pre-work, and a group lands as one** (proposed R7/R2;
+  entry point binding per the notes follow-up): `Batched` enters from
+  `PPending` — Ready or Blocked — never from authoring; a member runs
+  nothing and spends nothing; the lead's dispatch gates on the dep union
+  minus the group (in-group edges satisfied jointly — with the
+  lead-never-absorbs-its-own-dependency safety refusal); the lead's
+  single landing completes every member atomically (fan-out,
+  `CompleteViaBatch`, dependents unblocking as individual Dones would);
+  the lead's revoke releases members re-batchable, and a doomed member
+  parks behind the cascade wall like any pre-flight dependent.
 - **Multi-repo, isolated at the landing boundary** (the PR 4 gate): a
   ticket targets exactly one authored repo (`repo`, arrival-drawn from
   `1..N_REPOS`, immutable); dependencies may **cross repos** — the dep
@@ -356,13 +498,18 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
   (`deskVisibility`), with *progressing* read as measure-descent.
 - **Per-ticket liveness, sketched — conditional on authors** (the PR 1
   gate, extended by PR 2; PR 3 changed the digits, the notes PR the
-  authoring boundary — never the argument): every step outside the named
-  STUTTER/CHURN/AUTHORING sets strictly decreases a nonnegative measure
+  authoring boundary, the merge-queue PR added the bounded BATCHING set —
+  never the argument): every step outside the named
+  STUTTER/CHURN/AUTHORING/BATCHING sets strictly decreases a nonnegative
+  measure
   (`measureDescends`) — including the stage advance, which gets **no
-  exemption**. Under the default `RetryCharged` metering the churn set is
+  exemption**, and the dequeue, fast-path, and fan-out steps, which
+  descend outright. Under the default `RetryCharged` metering the churn
+  set is
   the free pre-work resume alone. The non-descending exemptions are proved
   non-vacuous by Stage 9b's witnesses (`freeClimbNever`,
-  `cascadeParkNever`, `stageAdvanceNever`, `carryNever`) — since the
+  `cascadeParkNever`, `stageAdvanceNever`, `carryNever`, and the batch
+  module's deterministic absorb climb for the BATCHING arm) — since the
   witness-hardening PR, each as a seed-free deterministic machine trace
   (`tests/chuggy_witness_test.qnt`, the gating layer) with the pinned-seed
   random probes demoted to warn-only trace-space health checks.
@@ -390,8 +537,7 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 |---|---|
 | `Frozen` (v1's second authoring phase) | **By the notes, never restored**: *"Frozen removed. Draft -> Ready/Blocked."* The v1 table's freeze/unfreeze/release-from-Frozen rows (lines 22/24/26) are deliberately not transcribed — deviation recorded at `decideRelease`. Content-pinning is below the model's grain. |
 | `Stalled` (v1's pre-work desk phase) | **By the notes, merged not deferred**: *"stalled should be rolled into escalated."* One parked phase (`PEscalated`); the pre-work walls survive as `reason` values, the pre-work resume as the `RPending` flavor. |
-| `Batched` (the authoring table's merge-queue state) | **PR 5**, with the merge queue it serves — and **re-sited by the notes follow-up** (*"Batched from Ready or Blocked"*): it will enter from `PPending`, the released pre-work state whose Ready/Blocked split is derived, **not** from authoring as v1's table rows 27–30 had it. |
-| **Staged merge gate** (chuggernaut spec.md §3.3 Merge Gate item 3: gate stages, failure classification, the gate-fix fast path) | **PR 5**, with the gate itself — chuggy's landing stays one abstract outcome until `landing/requirements` is answered. |
+| **Staged merge gate** (chuggernaut spec.md §3.3 Merge Gate item 3: gate stages, deterministic failure classification, the gate-fix fast path with its own two-round budget) | **Still absent after PR 5, deliberately**: the gate landed at depth 1 with **one abstract verdict** (`gateResolve` draws pass or fail, nothing finer); the staged internals enter only if the `landing/requirements` confirmation demands them (the merge-queue section — R1–R7 are proposed, and gate *structure* was not derivable without over-committing). |
 | **Per-task budgets / attempt counters** (chuggernaut §1.2 `work_retries`, `eval_retries`, `attempt`) | **Never** — retry machinery below the cycle, a charter §2 non-goal; container relaunches are the trusted `backoffLimit` fabric axiom. Tasks carry identity + kind + lifecycle state, no attempt digit (measure.qnt header re-affirms). |
 | **Required vs advisory evaluators** (`required: false` never blocks, §3.3) | Below the model's grain, absorbed into the per-stage **combinator**: an advisory evaluator is one the stage's combinator ignores. Becomes vocabulary only if the intake answer demands per-task requiredness. |
 | **Real diffs, region granularity, footprint honesty** (citations PR) | **Never, by design**: citations are nondet region sets over `1..N_REGIONS` — an over-approximation of every concrete diff/citation discipline. Whether an evaluator's claimed footprint is **trusted** (required, audited, ignored) is implementation/policy, flagged as an intake `eval/vocabulary` question. Scoping the operator resume's fresh fan-out is a possible later refinement, gated on the same answer. |
@@ -399,7 +545,8 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 | **The approval gate** (a synthesized required Human evaluator at `max(stage)+1`, §3.3) | Not synthesized by the model: it is *expressible* as data (a final stage); synthesizing it at resolution time is an authoring/implementation concern. |
 | Dep re-authoring (editing a doomed ticket's deps out of a revoked chain) | Not scheduled; the `dependency_revoked` wall's only modeled exit is revoke (the documented table-line-44 deviation at `retryableIn`). |
 | **Per-repo policies / budgets / queues** (multi-repo PR) | **Never scheduled — no charter provenance**: the charter's accounts are per-ticket (§2), a queue is a §2 non-goal in any shape, and a per-repo budget would break the measure's repo-blindness theorem (measure.qnt, multi-repo header note). A repo is a landing-boundary attribute of a ticket, not an economy. |
-| Merge-queue + landing mechanics | **PR 5**, deliberately last, driven by `landing/requirements` once answered. Only the outcome names are pinned now. |
+| Merge trains, batching heuristics, cross-repo atomic landings | **Never scheduled — no provenance anywhere, not even proposed** (the merge-queue section): the gate validates one candidate at a time, grouping choice is unrestricted nondet any policy refines, and a group is single-repo by `absorbableIn`. |
+| A bound on landing-queue wait | **Deliberately absent, flagged** (proposed R6): the model encodes *accepted-unbounded* — the never-wedge half is structural, the bound (if geoff/davemo88 demand one) is new machinery on confirmation. |
 | Refinement layer (the journaled actor — single-writer crash/recover, record-vs-effect atomicity) | Resolved to the **journaled actor** (charter §4, offline 2026-08-12): roadmap **PR 6**. |
 | System-quiescence theorem (v1's `envActive`/`quiesce` apparatus) | Charter §4's contested half. Per-ticket is the committed theorem; quiescence would return in a severable module that constrains nothing if abandoned. The multi-repo PR deliberately did **not** resurrect the flag: the branch-moved condition is a per-attempt named nondet draw on the step record, not stored env state. |
 | Scheduler, agent-slot count, FIFO ready queue | **Non-goal** (charter §2). Dispatch is the agentic dispatcher's unrestricted nondet pick among Ready tickets — modeled as its decision, not as a queue (notes PR). |
@@ -426,8 +573,9 @@ PR 2's authoring vocabulary is a **transcription, not an invention**: the
 Draft/Revoked edges come row-by-row from `specs/chuggernaut/table.qnt`
 (itself verbatim from chuggernaut's `state.rs`), cited at each decider.
 Deviations, each argued in place: Ready/Blocked collapse into derived
-`PPending`, `Batched` deferred to PR 5 (and notes-re-sited to enter from
-`PPending`), the `dependency_revoked` wall is not retryable, arrivals are
+`PPending`, `Batched` re-sited by the notes follow-up and landed in PR 5
+as the pre-work grouping phase entering from `PPending` (v1's
+`Frozen → Batched` table entry deliberately not transcribed), the `dependency_revoked` wall is not retryable, arrivals are
 chuggy-new, the park-cascade is chuggy-new design (v1 left revoke fan-out
 explicitly unanswerable, model-status §6b) — and, by the notes, **Frozen's
 three table rows are not transcribed** and **Stalled is not a phase**:

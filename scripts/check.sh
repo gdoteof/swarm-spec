@@ -472,6 +472,11 @@ warn_probe() {
 # the any{} roster. The multi-repo seed SURVIVED its first re-examination:
 # still violates within its 50k budget (~28s, rust backend) with the
 # operator-retry pipeline-resume signature; deliberately NOT re-pinned.)
+# (Refinement-PR forensics: the domain edits are referentially transparent
+# hoists — enablement vals rewired to pure Core forms, plus the
+# installCore action outside step's roster — so the nondet surface is
+# unchanged; SURVIVED re-examination with its signature, NOT re-pinned.
+# The same re-examination covered all four probes: all four survived.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
   --max-samples=50000 --max-steps=40 --seed=0x8095f27f767afa07 --backend=rust 2>&1); then
@@ -642,6 +647,118 @@ elif ! { echo "$carry_out" | grep -q 'CarryEvalVerdicts' && echo "$carry_out" | 
 else
   echo "Random probe carryNever: still firing (a reachable rework re-entry carries a"
   echo "disjoint retained passing verdict — trace-space coverage intact)."
+fi
+
+echo
+echo "=== Stage 10: chuggy-model PR 6 — the refinement layer (the journaled actor) ==="
+# The §4 fork resolved (charter: service + dumb K8s Jobs) as a machine:
+# specs/chuggy/refinement.qnt embeds the domain instance as the actor's
+# in-memory state and adds the durable decision journal, the executor
+# cursor, and the crash model (design + the four theorems at its header).
+# SEVERABLE: nothing in stages 1-9 reads it; deleting this stage and the
+# two files restores the pre-PR-6 gate. The two disciplines are STEP
+# RELATIONS on one module: rstep (journal-then-effect) and rstepHazard
+# (rstep + the effect-first crash seam), selected per run below.
+# Stage 1 already typechecks these with everything under specs/; the
+# explicit typechecks keep the stage self-contained.
+for f in specs/chuggy/refinement.qnt specs/chuggy/tests/chuggy_refinement_test.qnt; do
+  echo "--- typecheck $f"
+  npx quint typecheck "$f"
+done
+
+# 10a — the DETERMINISTIC layer (gates): pure unit tests (replay
+# determinism, tampered-journal refusals, the double-spend arithmetic),
+# the disciplined crash-recover-continue machine trace (allInvariants +
+# refinementInvariants at every step, crashes at every observable seam,
+# re-emission absorbed, a REWORK charged exactly once across a crash),
+# and the effect-first expected-violation traces (the dispatch
+# double-spend, the duplicate landing, the rework double-spend — each
+# violated conjunct pinned at its step WITH the domain machine green on
+# the same step: the domain cannot see the hazard).
+for m in chuggy_refinement_unit_test chuggy_refinement_witness_test \
+         chuggy_refinement_hazard_test; do
+  echo "--- quint test --main=$m specs/chuggy/tests/chuggy_refinement_test.qnt"
+  npx quint test --main="$m" specs/chuggy/tests/chuggy_refinement_test.qnt
+done
+
+# 10b — randomized instance runs: the disciplined machine holds the FULL
+# bundle (domain allInvariants + all four theorems); the hazard machine
+# holds the discipline-INDEPENDENT core (journal legality, recovery
+# completeness, executor soundness — the hazard corrupts the world
+# ledger, never the journal or the replay) AND the domain bundle (the
+# blindness claim, machine-checked at random).
+npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement \
+  --init=rinit --step=rstep \
+  --invariant='allInvariants and refinementInvariants' \
+  --max-samples=2000 --max-steps=40
+npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement \
+  --init=rinit --step=rstepHazard \
+  --invariant='allInvariants and refinementCore' \
+  --max-samples=2000 --max-steps=40
+
+# 10c — random expected-violation probes (the 9b-RND policy verbatim:
+# pinned seed, rust backend, verdict trichotomy — semantics are gated by
+# 10a's deterministic traces; these only report whether RANDOM
+# exploration of the hazard surface still finds each shape at its seed).
+#
+# Probe 1 — noDoubleSpentBudget under rstepHazard: expected violated (an
+# orphaned spawn is a world Job the journal never charged). Seed found
+# unseeded within ~60 samples (85ms, rust backend) and reproduces the
+# violation on its first trace (66ms) with the effect-crash-recover +
+# SpawnWorkTasks signature.
+if ds_out=$(npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement \
+  --init=rinit --step=rstepHazard --invariant=noDoubleSpentBudget \
+  --max-samples=20000 --max-steps=40 --seed=0x9431f884007c949f --backend=rust 2>&1); then
+  if echo "$ds_out" | grep -q '\[ok\]'; then
+    warn_probe noDoubleSpentBudget "seed 0x9431f884007c949f no longer reaches an orphaned spawn ([ok] over its 20k budget)"
+  else
+    echo "FAIL: noDoubleSpentBudget probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$ds_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$ds_out" | grep -q '\[violation\]'; then
+  echo "FAIL: noDoubleSpentBudget probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
+  echo "$ds_out" | tail -5 >&2
+  exit 1
+elif ! echo "$ds_out" | grep -q 'effect-crash-recover'; then
+  warn_probe noDoubleSpentBudget "violation trace lacks the effect-crash-recover signature"
+else
+  echo "Random probe noDoubleSpentBudget: still firing (an effect-first crash orphans a"
+  echo "paid spawn — the world runs a Job the journal never charged)."
+fi
+
+# Probe 2 — noDuplicateCycle under rstepHazard: expected violated (the
+# orphaned landing plus the re-decided landing merge the same diff
+# twice). Rarer than probe 1 — the trace must walk a full cycle to the
+# queue before the seam fires. Seed found unseeded within ~11.5k samples
+# (~2.4s, rust backend) and reproduces the violation on its first trace
+# (67ms) with the effect-crash-recover + landing-effect signature.
+if dc_out=$(npx quint run specs/chuggy/refinement.qnt --main=chuggy_refinement \
+  --init=rinit --step=rstepHazard --invariant=noDuplicateCycle \
+  --max-samples=50000 --max-steps=40 --seed=0xdb5d92d5dc2c2c67 --backend=rust 2>&1); then
+  if echo "$dc_out" | grep -q '\[ok\]'; then
+    warn_probe noDuplicateCycle "seed 0xdb5d92d5dc2c2c67 no longer reaches a duplicate landing ([ok] over its 50k budget)"
+  else
+    echo "FAIL: noDuplicateCycle probe exited 0 with no verdict (harness bug, not a dead seed):" >&2
+    echo "$dc_out" | tail -5 >&2
+    exit 1
+  fi
+elif ! echo "$dc_out" | grep -q '\[violation\]'; then
+  echo "FAIL: noDuplicateCycle probe crashed — failed for a reason other than the expected" >&2
+  echo "      violation (malformed invocation is a harness bug, not a dead seed):" >&2
+  echo "$dc_out" | tail -5 >&2
+  exit 1
+elif ! { echo "$dc_out" | grep -q 'effect-crash-recover' && echo "$dc_out" | grep -qE 'SquashMerge|AdvanceDefault'; }; then
+  # Signature = the hazard mechanism + a landing EFFECT. Not ticket-done:
+  # the rust backend is seeded but thread-racy in which violating trace it
+  # surfaces first, and the duplicate landing's evidence that survives
+  # every such trace is the landing effect string (in orphans or journal),
+  # not any particular label (found by the refinement PR's review).
+  warn_probe noDuplicateCycle "violation trace lacks the duplicate-landing signature"
+else
+  echo "Random probe noDuplicateCycle: still firing (an effect-first crash at the landing"
+  echo "seam merges the same candidate twice — one journaled landing, two in the world)."
 fi
 
 echo

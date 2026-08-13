@@ -2,8 +2,13 @@
 /// written AFTER and fitted TO measure.qnt (standing rule 1). This is the
 /// layer both §4 fork candidates share: every decider is a pure function of
 /// observed state (`Core`), so a CRD reconciler and a journaled actor reuse
-/// them unchanged; the refinement layer (reconcile vs journaled-actor
-/// semantics) is deliberately absent, blocked on the §4 conversation.
+/// them unchanged; the refinement layer was deliberately absent here while
+/// blocked on the §4 conversation, and — the fork resolved (service + dumb
+/// Jobs) — now lives as the SEPARATE severable module refinement.qnt
+/// (roadmap PR 6: the journaled actor), which embeds this machine untouched.
+/// This file's only PR 6 edits are referentially transparent exports: the
+/// Core-parameterized enablement forms (each val rewired to reference its
+/// pure form) and the installCore seam action outside `step`'s roster.
 ///
 /// PR 2 (authoring lifecycle, charter §2 first-class rank #1; gate: revoke
 /// cascades proved safe) is IN: tickets arrive as Drafts through the
@@ -241,7 +246,12 @@
 ///     so a Work task-set resolves at CYCLE level only;
 ///   - environment quiescence (v1's envActive/quiesce): the quiescence
 ///     theorem is §4's contested half — per-ticket liveness only, sketched via
-///     measure descent.
+///     measure descent;
+///   - the runtime shape (journal, executor cursor, crash/recover — any
+///     platform vocabulary at all): refinement.qnt, the PR 6 module layered
+///     ON this machine, severable — exactly the charter's platform-capture
+///     guard (every shape refines THIS machine; this file never learns
+///     which shape runs it).
 module chuggy_domain {
   import chuggy_measure.* from "./measure"
 
@@ -737,6 +747,73 @@ module chuggy_domain {
 
   pure def depsDoneIn(c: Core, j: int): bool =
     c.tickets.get(j).deps.forall(k => c.tickets.get(k).phase == PDone)
+
+  // --- Core-parameterized enablement (REFINEMENT PR, roadmap PR 6 — the
+  // m6 hoist discipline one level up, applied to the enablement SETS):
+  // the journaled actor's replay checker (specs/chuggy/refinement.qnt,
+  // journalLegalOn) must re-check each journaled decision's enablement at
+  // the REPLAYED prefix state — a Core, not this module's live vars — and
+  // a copied guard drifts exactly like the witness-driver copies m6
+  // killed. So each enablement val below (the state section) is now a
+  // one-line reference to its pure Core form here; the machine's actions
+  // and the replay checker consume the SAME definition. No semantic
+  // change: each val's body moved verbatim into its pure def (liveTickets
+  // becomes the explicit c.tickets.keys()).
+
+  /// Room for one more arrival (the N_TICKETS arrival bound).
+  pure def canArriveIn(c: Core): bool = c.tickets.keys().size() < N_TICKETS
+
+  /// Tickets a new arrival may depend on: no tombstones (decideArrive's
+  /// doc has the cascadeSafety argument).
+  pure def dependableIn(c: Core): Set[int] = c.tickets.keys().filter(k => and {
+    c.tickets.get(k).phase != PRevoked,
+    not(c.tickets.get(k).phase == PEscalated and c.tickets.get(k).reason == RsDependencyRevoked)
+  })
+
+  /// The only authoring phase, hence the only releasable set.
+  pure def draftsIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == PDraft)
+
+  /// Every non-terminal may be revoked (table.qnt lines 45-48).
+  pure def revocablesIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => revocableIn(c, j))
+
+  /// The derived Ready room (isReadyIn per ticket).
+  pure def readiesIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => isReadyIn(c, j))
+
+  /// Tickets whose task set can receive completion events.
+  pure def taskPhaseIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j =>
+      c.tickets.get(j).phase == PWorking or c.tickets.get(j).phase == PEvaluating)
+
+  pure def reducibleWorkIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j =>
+      c.tickets.get(j).phase == PWorking and runningCount(c.tickets.get(j).tasks) == 0)
+
+  pure def reducibleEvalIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j =>
+      c.tickets.get(j).phase == PEvaluating and runningCount(c.tickets.get(j).tasks) == 0)
+
+  /// Enqueued tickets whose repo's gate is free (the depth-1 refusal).
+  pure def gateEnterablesIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => gateEnterableIn(c, j))
+
+  /// The occupied gate slots.
+  pure def gatedIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == PGated)
+
+  pure def doneIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == PDone)
+
+  /// Parked tickets the operator may Retry (retryableIn per ticket).
+  pure def retryablesIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => retryableIn(c, j))
+
+  /// Absorbable (lead, member) pairs (absorbableIn is the shared guard).
+  pure def absorbablePairsIn(c: Core): Set[(int, int)] =
+    tuples(c.tickets.keys(), c.tickets.keys())
+      .filter(p => absorbableIn(c, p._1, p._2))
 
   /// The derived waiting room (standing rule 3), as pure predicates over a
   /// Core so tests can pin them: a dep that is not Done blocks — including
@@ -1268,6 +1345,32 @@ module chuggy_domain {
     prevRecords' = currentRecords
   }
 
+  /// REFINEMENT-LAYER SEAM (roadmap PR 6 — the state-shaped counterpart
+  /// of the Core-parameterized enablement exports above): install an
+  /// externally reconstructed Core WITHOUT taking a domain step. The
+  /// refinement module's executor/crash actions (refinement.qnt emitNext /
+  /// crashRecover / effectCrash) are NOT domain steps — the domain trace
+  /// has no row for them — so both step-history ghosts stay STALE (they
+  /// keep describing the last real decision, which keeps every
+  /// lastStep/ghost invariant's verdict byte-identical across the
+  /// refinement-layer step; `apply` would re-snapshot them and falsely
+  /// present the crash as a flat domain step). NOT in `step`'s any{}
+  /// roster: the domain machine cannot reach this — only the refinement
+  /// layer calls it, and only with a replay of its own journal (under the
+  /// journal-then-effect discipline that replay equals the live state —
+  /// refinement.qnt recoveryComplete — so the domain vars do not move).
+  /// Exported as an action rather than left to the refinement module
+  /// because Quint 0.32's instance flattening rejects a primed assignment
+  /// of an instance's var from the importing module's own expressions
+  /// ("Variable not set" at evaluation) — the assignment must live in the
+  /// module that declares the var, exactly like the invariants.
+  action installCore(c: Core, rec: StepRecord): bool = all {
+    tickets' = c.tickets,
+    lastStep' = rec,
+    prevMeasure' = prevMeasure,
+    prevRecords' = prevRecords
+  }
+
   // --- Derived waiting room (standing rule 3: derive, don't store) ---------
   // Blocked and Ready are PREDICATES over deps + record, not phases. v1
   // stored both; chuggy stores only PPending and derives the split, so the
@@ -1286,50 +1389,48 @@ module chuggy_domain {
 
   // --- Enablement sets ------------------------------------------------------
 
+  // Each enablement val below REFERENCES its pure Core form (the
+  // refinement PR's hoist — see the Core-parameterized enablement section
+  // with the deciders): one definition, consumed by the machine's
+  // actions, the witness drivers, and the journal replay checker alike.
+
   /// Room for one more arrival (the N_TICKETS arrival bound keeps the state
   /// space finite; ids dense, never reused).
-  val canArrive: bool = liveTickets.size() < N_TICKETS
+  val canArrive: bool = canArriveIn(core)
   /// Tickets a new arrival may depend on: no tombstones — neither Revoked nor
   /// cascade-parked (which, by cascadeSafety, is exactly the
   /// transitively-doomed set; decideArrive's doc has the argument).
-  val dependableTickets: Set[int] = liveTickets.filter(k => and {
-    tickets.get(k).phase != PRevoked,
-    not(tickets.get(k).phase == PEscalated and tickets.get(k).reason == RsDependencyRevoked)
-  })
+  val dependableTickets: Set[int] = dependableIn(core)
   /// The only authoring phase (notes PR: Frozen removed), hence the only
   /// releasable set — table line 21; the Frozen release row (line 26) died
   /// with the phase (deviation recorded at decideRelease).
-  val draftTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PDraft)
+  val draftTickets: Set[int] = draftsIn(core)
   /// Every non-terminal may be revoked (table.qnt lines 45-48).
-  val revocableTickets: Set[int] = liveTickets.filter(j => revocableIn(core, j))
-  val readyTickets: Set[int] = liveTickets.filter(j => isReady(j))
+  val revocableTickets: Set[int] = revocablesIn(core)
+  val readyTickets: Set[int] = readiesIn(core)
   /// Tickets whose task set can receive completion events (real or duplicate).
-  val taskPhaseTickets: Set[int] =
-    liveTickets.filter(j => tickets.get(j).phase == PWorking or tickets.get(j).phase == PEvaluating)
-  val reducibleWork: Set[int] =
-    liveTickets.filter(j => tickets.get(j).phase == PWorking and runningCount(tickets.get(j).tasks) == 0)
-  val reducibleEval: Set[int] =
-    liveTickets.filter(j => tickets.get(j).phase == PEvaluating and runningCount(tickets.get(j).tasks) == 0)
+  val taskPhaseTickets: Set[int] = taskPhaseIn(core)
+  val reducibleWork: Set[int] = reducibleWorkIn(core)
+  val reducibleEval: Set[int] = reducibleEvalIn(core)
   /// The landing QUEUE, derived (merge-queue PR): enqueued tickets whose
   /// dequeue the gate serializes. Deliberately unordered — see gateEnter.
   val landingTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PLanding)
   /// Enqueued tickets whose repo's gate is FREE — the dequeue-enabled set
   /// (gateEnterableIn is the shared guard; the depth-1 refusal).
-  val gateEnterable: Set[int] = liveTickets.filter(j => gateEnterableIn(core, j))
+  val gateEnterable: Set[int] = gateEnterablesIn(core)
   /// The occupied gate slots (at most one per repo — gateDepthOne).
-  val gatedTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PGated)
+  val gatedTickets: Set[int] = gatedIn(core)
   /// Absorbable (lead, member) pairs (merge-queue PR, R7): both PPending,
   /// same repo, member leads nobody — absorbableIn is the shared guard.
-  val absorbablePairs: Set[(int, int)] =
-    tuples(liveTickets, liveTickets).filter(p => absorbableIn(core, p._1, p._2))
-  val doneTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PDone)
+  val absorbablePairs: Set[(int, int)] = absorbablePairsIn(core)
+  val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
   /// exists and is affordable). Under RetryCharged a charging resume with
   /// zero gas parks the ticket permanently (v1's retryableEscalated corner);
   /// the pre-work RPending flavor is free, so a revalidation park is
   /// always retryable; the dependency_revoked wall never is (resumeAt
   /// RNone — its only exit is revoke).
-  val retryableEscalated: Set[int] = liveTickets.filter(j => retryableIn(core, j))
+  val retryableEscalated: Set[int] = retryablesIn(core)
 
   /// No machine, operator, or author action can move anything. PR 2 shrank
   /// this dramatically: revoke is enabled on EVERY non-terminal (table

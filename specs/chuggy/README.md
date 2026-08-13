@@ -1,4 +1,4 @@
-# specs/chuggy — the chuggy-model (PRs 1–5 + the notes reconciliation + citations)
+# specs/chuggy — the chuggy-model (PRs 1–6 + the notes reconciliation + citations)
 
 The fresh Quint model for **chuggy**, written *before* the system it
 specifies. Requirements and provenance: [docs/chuggy-charter.md](../../docs/chuggy-charter.md).
@@ -22,6 +22,8 @@ traces ship from here as versioned artifacts.
 | `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. Multi-repo PR (roadmap PR 4): a ticket targets **exactly one repo** — `repo`, authored at arrival from `1..N_REPOS` (`repos` is the refusal rule) and immutable, with deps free to **cross repos** (the dep gate is Done-ness, not location); the `land` action draws the environment's per-attempt **`branchMoved`** choice and the outcome from `landOutcomes(moved)` — a quiet branch cannot fail (the envActive standing rule as a named nondet event, no stored flag); `decideLand` stamps every arm with the attempt's own-repo attribution; gate invariants `landingIsolation`, `quietRepoLandsCleanly`, `reposWellFormed`. Merge-queue PR (roadmap PR 5; every mechanic cites its **proposed requirement** R1–R7 by name — the severability rule): the landing is a **path** now — `eval-passed` enqueues (`PLanding`), the dequeue (`gateEnter`, routing hoisted into `decideDequeue` per the adversarial review) draws `branchMoved` per attempt (quiet → the skip fast-path lands `SquashMerge` in the same step; moved → `gate-opened`, the repo's depth-1 slot `PGated`), and the gated resolution (`gateResolve`) draws from `landOutcomes(true)` — `AdvanceDefault` (the validated candidate promoted) or the GatePricing-priced eviction; plus the **group**: `decideAbsorb` (Batched re-sited: `PPending → PBatched`, guard `absorbableIn`), the dep-union dispatch gate (`groupDeps`), the completion fan-out inside `landSuccess`, and the dissolution/park arms in `decideRevoke`; new invariants `gatedPromotesDirectSquashes`, `gateDepthOne`, `batchWellFormed`; visibility walks became group-aware bounded-sweep fixpoints. |
 | `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. Multi-repo PR: all four run **with repos enabled** (`N_REPOS = 2`: arrivals draw the authored target repo, landing attempts draw `branchMoved` — the smallest universe where own-repo attribution is distinguishable from a constant stamp). Merge-queue PR: all four run **with the gate and grouping enabled at no new const** (occupancy is a phase; grouping is bounded by `N_TICKETS`): the `land` draw became `gateEnter` (the dequeue's `branchMoved` draw — quiet fast-paths, moved occupies) + `gateResolve` (the gated outcome), and `absorb` joined the `any{}` roster drawing same-repo Pending pairs — the nondet surface changed yet again; every 9b-RND seed re-examined (forensics in `scripts/check.sh`). |
 | `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark — and the merge-queue suite: the path rule pinned as the outcome sets themselves, the depth-1 refusal (same-repo refused, cross-repo independent), the eviction fixtures re-sited to `PGated` with byte-identical deltas, absorption from Ready and Blocked with every refusal (including the lead-never-absorbs-its-own-dependency safety rule), the dep union, the fan-out on both paths, dissolution, park-wins, and batch-blindness. |
+| `refinement.qnt` | `chuggy_refinement` | **The refinement layer** (roadmap PR 6 — charter §4's resolved fork as a machine; full design + theorems at the file header and the PR 6 section below). A CONCRETE module embedding a tiny `chuggy_domain` instance as the journaled actor's in-memory state, plus this layer's own vars: the durable decision `journal` (`Entry = {seq, cmd, rec}` — monotone dense seq, the decision event with its nondet picks named, the produced StepRecord), the executor cursor `applied`, the world ledger (`worldEffects` — received seqs, set semantics = idempotency-key absorption; `orphans` — effects from never-journaled decisions). The two disciplines are **step relations**: `rstep` (journal-then-effect: actor steps journal atomically, `emitNext` lags, `crashRecover` fires at any instant with nondet cursor regression) and `rstepHazard` (= rstep + `effectCrash`, the one seam effect-first admits). Invariants: `journalLegal` (theorem 1), `recoveryComplete` (theorem 3), `executorSound`, `journalCoversWorld` / `noDoubleSpentBudget` / `noDuplicateCycle` (theorem 2), bundled as `refinementCore` (holds under BOTH relations) and `refinementInvariants` (the journal-first gate). |
+| `tests/chuggy_refinement_test.qnt` | `chuggy_refinement_unit_test`, `chuggy_refinement_witness_test`, `chuggy_refinement_hazard_test` | PR 6's test half (check.sh Stage 10a): **pure unit tests** (replay determinism via the append agreement, tampered-journal refusals — seq gaps, disabled decisions, forged records — and the double-spend arithmetic on hand-built journals), the **disciplined crash-recover-continue machine trace** (one ticket through a full REWORK to a quiet landing with crashes at every observable seam, re-emission absorbed, `allDomainInvariants and refinementInvariants` at every step), and the **effect-first expected-violation traces** (theorem 4: the dispatch double-spend, the duplicate landing, the rework double-spend — each pinned at its step with the domain machine still green on that step). |
 | `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test`, `chuggy_witness_multirepo_test`, `chuggy_witness_gate_test`, `chuggy_witness_gate_deadline_test`, `chuggy_witness_batch_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). The multi-repo module (PR 4) carries the isolation gate's witness half — the machine's two new nondet draws each exercised on both branches: the landing choice pinned **quiet** (the landing succeeds, attributed), pinned **moved** (the gate rework AND the gate-budget wall carry `{repo, branchMoved: true}`), and the repo pick exercised off-default with a **cross-repo dep chain** (a repo-1 landing flips its repo-2 dependent to Ready in the same post-state — the dep gate proved location-blind on a machine trace). It has **no paired random probe**: landing attempts are dense in random exploration (unlike the carry), so the unseeded Stage 9 runs are its random side. The merge-queue PR (PR 5) added modules six through eight, extending this layer first per its convention: the **gate module** pins the depth-1 exclusivity as a **guard-refusal on a machine trace** (the second same-repo ticket's dequeue disabled while the slot is held, enabled again the step it frees), lands **both success effects on one trace**, each from its own path (gated `AdvanceDefault`, then quiet fast-path `SquashMerge` — the §5e theorem witnessed), and carries the **quiet fast-path as its own witnessed run** — SquashMerge reachability pinned against the hoisted routing decider `decideDequeue` (adversarial review MAJOR 1: the quiet/moved route is a decider both the `gateEnter` action and the `doDequeue` drivers reference, never an inline composition a mutant could re-route silently); the **deadline-only module** walks the eviction on the other GatePricing branch — two gas-only gate failures into the gas wall, v1's §5a gate-loop shape reproduced with the backstop doing its job; the **batch module** fires the `ticket-batched` BATCHING climb (the stepDescends convention roster), absorbs from Ready **and** Blocked (the note's both flavors), pins the union gating the lead, the completion fan-out (the member's cross-repo dependent Ready in the same post-state), and the dissolution. Like the multi-repo module, none has a paired random probe. |
 
 Checked by `scripts/check.sh` Stage 9 + 9b and `just chuggy`. **The
@@ -56,6 +58,14 @@ citations PR forced the fourth consecutive `freeClimbNever` seed re-pin):
 Stage 9 proper is typecheck + unit tests + unseeded `allInvariants`
 simulation on all **four** instances (the citations instance's unseeded run
 replaced the coverage that used to ride its removed pinned twin).
+
+**Stage 10** is PR 6's severable extension of the same two-layer policy:
+10a is the deterministic gate (the three refinement test modules), 10b the
+unseeded instance runs (`rstep` under the full bundle; `rstepHazard` under
+`allInvariants and refinementCore` — the hazard corrupts the world ledger,
+never the journal, the replay, or the domain), and 10c two warn-only
+pinned-seed probes (`noDoubleSpentBudget`, `noDuplicateCycle` — expected
+violations under `rstepHazard`, seed forensics at each probe).
 
 ## The notes-reconciliation PR — what each note changed here
 
@@ -340,6 +350,156 @@ grain — the gate is one abstract verdict; the staging enters only if the
 `landing/requirements` confirmation demands it (the deliberately-absent
 table row).
 
+## The refinement layer — the journaled actor (PR 6)
+
+Roadmap **PR 6**, the final machine PR; gate: *"no double-spent budget, no
+duplicate cycle, across crashes at any seam; a later controller migration
+re-proves the same refinement against the same machine."* Provenance:
+charter §4's fork, **resolved offline (2026-08-12)** to *service + dumb
+K8s Jobs* — "one journaled single-writer actor keeps all state and makes
+every decision; Kubernetes runs things and decides nothing" — with the
+refinement layer thereby "unblocked and *defined*: what gets modeled next
+is the journaled actor — crash/recover of the single writer, and the
+atomicity seam between recording a decision and effecting it (the
+double-spend hazard from the shape flows)." This PR is that definition
+built: `refinement.qnt` + `tests/chuggy_refinement_test.qnt` + check.sh
+Stage 10, all **severable** (nothing in the domain, the mc instances, or
+stages 1–9 reads them — the §4 severability promise kept).
+
+It also closes the one v1-review note the triage filed against this PR
+("already true" table): *"how do decision events flow to consumers /
+executors that apply their side effects."* The answer, as machine: **the
+decision events ARE the journal entries** — every actor decision appends
+`{seq, cmd, rec}` (monotone dense sequence number; the decision event
+with its nondet picks named — the witness-driver discipline as journal
+data; the StepRecord the decision produced), and the **executor is a
+cursor** (`applied`) consuming the journal in order and emitting each
+entry's effects toward the world. Decisions flow decide → journal →
+cursor → world; the seam between journal and effect is the atomicity
+this PR proves safe in one order and demonstrates fatal in the other.
+
+**The machine.** The actor's in-memory state is an embedded
+`chuggy_domain` instance (a fixed tiny instance — the smallest consts
+that exercise a **rework**, because a rework is the re-entry that
+charges: `N_TICKETS = 2`, `N_TASKS = 1`, `RWBudget(1)`, `GAS = 3`,
+`Budgeted(1)`, `RetryCharged`, single-stage programs, one region, one
+repo), so the domain's `allInvariants` is checked against the actor's
+memory at every step. The actor's decide step **is** the domain decider:
+`execCmd` dispatches `cmd` onto the pure `decide*` functions, guarded by
+`cmdEnabled` — the domain's own enablement, re-stated over an explicit
+`Core` via pure forms hoisted into domain.qnt (`canArriveIn`,
+`draftsIn`, `readiesIn`, … — each enablement val now references its pure
+form; referenced, never copied). The crash model: `crashRecover` may
+fire **at any instant** — recovery replays the journal into fresh memory
+and the cursor regresses nondet (the durable checkpoint lags) — and the
+decide↔journal seam is collapsed into the atomic `journalStep` because a
+pure decision that dies un-journaled has no footprint anywhere: the run
+where it crashed is indistinguishable from the run where it was never
+decided, which the machine's nondeterminism already contains.
+
+**The two orderings** are step relations, not machinery: `rstep` is
+journal-then-effect (the correct discipline); `rstepHazard` is `rstep`
+plus exactly one action — `effectCrash`: decide, emit, die before the
+journal write. The delta between the relations **is** the discipline,
+and the expected-violation runs show that single delta breaking the
+theorems (the house pattern — hazards stay reproducible by
+configuration).
+
+**The four theorems, as implemented:**
+
+1. **Refinement** (`journalLegal`) — every journaled history projects to
+   a legal domain-machine trace: replay the journal from genesis; each
+   entry must carry the next dense seq, be **enabled** at the replayed
+   prefix (the domain's own guards), and its record must be **exactly**
+   what the decider produces there. Structural (the actor's step is the
+   decider behind the same guard) *and* stated as a checked invariant —
+   so a tampered journal is caught by predicate, not by construction
+   argument (the unit tests pin the refusals: seq gaps, disabled
+   decisions, forged records). Since every non-actor step leaves the
+   domain vars untouched, the domain-visible trace of a disciplined run
+   is literally the journal's record sequence.
+2. **No double-spent budget / no duplicate cycle across crashes**
+   (`noDoubleSpentBudget`, `noDuplicateCycle`, `journalCoversWorld`;
+   `journalLandingsMatchLedger` is the journal-side half) — under
+   journal-then-effect, the world never runs more paid work for a ticket
+   than the journal charged, and never lands one ticket's diff twice,
+   across crashes at any seam. Effects between the journal position and
+   the applied cursor **are re-emitted** — at-least-once toward the
+   world — but a re-emission carries the same decision seq and absorbs;
+   the **journal** never gains a duplicate decision.
+3. **Recovery completeness** (`recoveryComplete`) — replay of the
+   current journal is exactly the state the actor holds, in every
+   reachable state (hence for every prefix of every run). Replay is
+   deterministic **by purity**: the deciders are pure functions of
+   (Core, picks) — charter §4's "both shapes reuse the deciders" is
+   precisely what makes the journal a sufficient recovery basis — and
+   the incremental/batch agreement is unit-pinned
+   (`replayAppendAgreesTest`).
+4. **The demonstration witness** — deterministic expected-violation
+   traces under `rstepHazard`: the **dispatch double-spend** (the Job
+   launches, the crash eats the journal write, the recovered actor
+   re-decides — two Jobs, one journaled charge), the **rework
+   double-spend** (the flows-analysis scenario: the rework Job fans out,
+   the crash loses the decision *and its charge* — the book's accounts
+   are full while the world runs the rework; the re-decision charges
+   once for two Jobs), and the **duplicate cycle** (the quiet dequeue
+   squash-merges in the world, the crash eats the record, the re-landed
+   ticket merges the same diff twice — one clean journaled landing).
+   Every violated conjunct is asserted **with `allDomainInvariants`
+   green on the same step**: the domain machine is *blind* to the
+   hazard — `landingExclusive` holds while the world merges twice —
+   which is the machine-checked argument that this obligation belongs to
+   the refinement layer and cannot be discharged inside the domain.
+
+**The composition argument (with the fabric's at-least-once).**
+Outbound: executor re-emission after cursor loss and fabric redelivery
+are the same at-least-once, and both absorb because every emitted effect
+is keyed by its decision's journal seq (`worldEffects`' set semantics is
+that assumption stated as a model primitive — the charter §2 fabric row,
+"every effect is idempotent," given its key). Inbound: completions and
+confirmations also arrive at-least-once, and the **domain's existing
+duplicate tolerance absorbs them** — duplicate task completions no-op by
+identity, duplicate landing deliveries no-op at the boundary — so the
+actor journals the absorbing no-op decisions like any others and replay
+reproduces them (the witness trace journals both a `task-done-duplicate`
+and a `land-duplicate` row). What neither side can absorb is an
+**un-keyed** effect — a decision that reached the world but never the
+journal — and that is exactly the orphan the discipline forbids.
+
+**Platform capture, made concrete** (charter §4's guard): the domain
+machine contains no vocabulary from this layer — no journal, no cursor,
+no crash, no Kubernetes — and this PR moved no decider (domain.qnt's
+only edits are referentially transparent exports: the pure enablement
+forms and the `installCore` seam, each with its val rewired to reference
+it). A later controller migration writes a **sibling of
+`refinement.qnt`** — its own state and seams — and re-proves these same
+obligations (history projects to legal domain traces; no double-spend
+across its crash seams) against the **byte-identical domain machine**.
+Nothing in the domain moves; only the refinement module is replaced.
+
+**The journal bound, honestly:** the journal grows one entry per
+decision and the measure never reads it (append-only provenance, like
+`Ticket.record`). Its length is finite under exactly the per-ticket
+liveness sketch's conditions (measure.qnt header): descending decisions
+are bounded by the measure, AUTHORING/BATCHING rows by the arrival cap,
+journaled STUTTER rows by the fabric's finitely-many-duplicates
+assumption, CHURN rows by `RetryCharged` (this instance's metering; the
+`RetryFree` conditionality is inherited, not new). Snapshot/compaction
+is an implementation concern — a snapshot is a replay prefix, sound by
+recovery completeness — and is not modeled.
+
+**Deliberately out — no provenance, severable if ever wanted:**
+**multi-writer** (the charter shape is the *single*-writer actor; a
+second writer would need its own §4-grade decision), **sharding /
+partitioned journals** (one journal, one actor — scale machinery with no
+charter row), **real persistence formats** (the journal is a list of
+decision events; encodings, fsync semantics, and log stores are
+implementation), and **executor parallelism** (one cursor, in journal
+order; concurrent executors would need their own exclusion argument —
+the fabric's at-least-once already covers the observable effect of any
+honest executor pool, but proving that is the implementation's
+obligation, not assumed here).
+
 ## The PR 3 eval vocabulary — extracted, standing in
 
 The intake question `eval/vocabulary` ("write the eval spec for one real
@@ -380,7 +540,7 @@ short-circuit → the same decider's failure arm routing into the **existing**
 rework/escalation economy; the chronological task log → `Ticket.record` with
 history-unique sequential ids; revoke's force-close → `TCancelled`.
 
-## What the model claims (PRs 1–5 + notes + citations)
+## What the model claims (PRs 1–6 + notes + citations)
 
 - **Effect-only exclusivity** (charter §2): any number of task executions
   may run and duplicate — the fabric is at-least-once, `no-double-pods` was
@@ -530,6 +690,16 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
   every pre-flight transitive dependent on the desk behind the
   `dependency_revoked` wall, each with its own open human task
   (`cascadeSafety`, checked in every reachable state).
+- **The service shape refines the machine** (PR 6, the roadmap gate):
+  the journaled single-writer actor's every journaled history is a legal
+  domain trace (`journalLegal`), replay of any journal prefix is exactly
+  the memory it recovers (`recoveryComplete`), and under
+  journal-then-effect, crash/recover **at any seam** never charges an
+  account twice and never lands a diff twice (`noDoubleSpentBudget`,
+  `noDuplicateCycle`) — with effect-then-journal's double-spend kept
+  reproducible as deterministic expected-violation traces on which the
+  domain machine stays green (the hazard is invisible at the domain
+  grain; the refinement section above has the composition argument).
 
 ## Deliberately absent — and which PR restores it
 
@@ -547,7 +717,7 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 | **Per-repo policies / budgets / queues** (multi-repo PR) | **Never scheduled — no charter provenance**: the charter's accounts are per-ticket (§2), a queue is a §2 non-goal in any shape, and a per-repo budget would break the measure's repo-blindness theorem (measure.qnt, multi-repo header note). A repo is a landing-boundary attribute of a ticket, not an economy. |
 | Merge trains, batching heuristics, cross-repo atomic landings | **Never scheduled — no provenance anywhere, not even proposed** (the merge-queue section): the gate validates one candidate at a time, grouping choice is unrestricted nondet any policy refines, and a group is single-repo by `absorbableIn`. |
 | A bound on landing-queue wait | **Deliberately absent, flagged** (proposed R6): the model encodes *accepted-unbounded* — the never-wedge half is structural, the bound (if geoff/davemo88 demand one) is new machinery on confirmation. |
-| Refinement layer (the journaled actor — single-writer crash/recover, record-vs-effect atomicity) | Resolved to the **journaled actor** (charter §4, offline 2026-08-12): roadmap **PR 6**. |
+| Refinement layer (the journaled actor — single-writer crash/recover, record-vs-effect atomicity) | **Landed** (roadmap PR 6): `refinement.qnt` + its tests + check.sh Stage 10, severable — the section above. Still absent within it, deliberately: multi-writer, sharding, persistence formats, executor parallelism (no provenance — the section's deliberately-out list). |
 | System-quiescence theorem (v1's `envActive`/`quiesce` apparatus) | Charter §4's contested half. Per-ticket is the committed theorem; quiescence would return in a severable module that constrains nothing if abandoned. The multi-repo PR deliberately did **not** resurrect the flag: the branch-moved condition is a per-attempt named nondet draw on the step record, not stored env state. |
 | Scheduler, agent-slot count, FIFO ready queue | **Non-goal** (charter §2). Dispatch is the agentic dispatcher's unrestricted nondet pick among Ready tickets — modeled as its decision, not as a queue (notes PR). |
 | Token/API spend | **Never** a model variable (charter §2 currency row; chuggernaut's per-task `token_usage` stays implementation accounting). |

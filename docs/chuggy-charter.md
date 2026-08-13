@@ -46,6 +46,7 @@ Each row is settled unless reopened by name.
 | Landing | **Deferred by choice.** Both undecided, `landing/requirements` unanswered. The model keeps landing mechanics abstract but names outcomes precisely from day one (`AdvanceDefault` ≠ `SquashMerge` — v1's one conformance divergence lives here). | both `landing/semantics`; kasofsk `landing/divergence` |
 | Non-goals | **No bespoke scheduler. No retry machinery below the cycle. No dashboard in the model** (the dashboard consumes state, never causes transitions). | both, `identity/nongoals-r2` |
 | Termination, committed part | **Per-job liveness is owed**: every job reaches Done, Escalated, or Stalled, or provably parks. | both rounds, both respondents (the contested half is §4) |
+| Fabric shape | **Service + dumb K8s Jobs.** The journaled single-writer actor keeps all state and makes every decision; Kubernetes runs things and decides nothing. CRDs/controllers remain an explicitly open later migration — and the domain machine is shape-agnostic, so migrating would not invalidate the model. | resolved offline, 2026-08-12 (§4) |
 
 ## 3. In scope by silence — confirm or shrink
 
@@ -61,24 +62,27 @@ Also unanswered and still wanted: `eval/vocabulary` (one real eval spec in
 pseudo-YAML — the eval interpreter stays abstract until an example exists),
 `landing/requirements`, `identity/scale` (kasofsk), `identity/surprise` (both).
 
-## 4. The agenda — diverged, needs one conversation
+## 4. The agenda — the fork resolved, three items open
 
-**The fork: premise and shape.** These are one disagreement seen twice.
-kasofsk changed `premise/agree` to **no** in round 2 and picked
-`fabric/shape = service-plus-jobs`: one long-running orchestrator — v1's
-single-writer actor, deployed — with K8s Jobs as dumb executors and truth in the
-service's journal. geoff answered `fabric/shape-r2 = crd-controllers`: state in CR
-status, transitions owned by level-triggered reconcilers.
+**The fork: premise and shape — resolved offline (2026-08-12).** The round-2
+divergence: kasofsk flipped `premise/agree` to **no** and picked
+`fabric/shape = service-plus-jobs`; geoff answered `crd-controllers`. The offline
+conversation put the reason on record: kasofsk feels strongly that adapting
+chuggernaut's core abstraction to Kubernetes is the wrong move — the fear is being
+forced to think and work in the shapes the platform wants rather than the shapes
+the core objective wants. geoff holds that the design is, or will be, reasonably
+informed by what it runs on — and concedes the present: **service + dumb Jobs is
+the shape for next steps**; if controllers are an improvement, they are one that
+can come later. Decision recorded in §2.
 
-What the fork does *not* block: the domain machine. In both shapes the deciders are
-pure functions of observed state — v1's deciders already have that shape, and both
-candidates reuse it. What the fork decides is the *second* model layer: reconcile
-semantics (stale reads, conflicting status writes) versus journaled-actor semantics
-(crash/recover of the single writer, the atomicity seam between recording a decision
-and effecting it — the double-spend hazard in the flows walkthrough). PR 1 therefore
-builds only what both shapes share; the refinement layer waits for this
-conversation. kasofsk's "no" arrived without a reason attached — the conversation
-starts there.
+Two consequences worth naming. First, the refinement layer is unblocked and
+*defined*: what gets modeled next is the journaled actor — crash/recover of the
+single writer, and the atomicity seam between recording a decision and effecting
+it (the double-spend hazard from the shape flows). Second, the model itself is the
+standing answer to kasofsk's fear: the domain machine encodes the core objective
+with no platform vocabulary in it, and every runtime shape — today's service, any
+future controller — must refine the *same* machine. Platform capture is precisely
+what the refinement obligation forbids.
 
 **Progressing.** geoff `humans/progressing = measure-descent` (the termination
 measure does double duty); kasofsk `report-only` (dashboard query, informal). The
@@ -119,4 +123,4 @@ Carried from v1's machine-checked lessons; constraints, not code:
 | 3 | Task-records depth: task anatomy, parallel task-set semantics | phase-outcome combinators pinned by a real `eval/vocabulary` example |
 | 4 | Multi-repo | isolation invariants |
 | 5 | Merge-queue + landing (rank last, on purpose) | driven by `landing/requirements`, once answered |
-| — | Refinement layer (reconcile vs journaled-actor) | blocked on §4's fork conversation |
+| 6 | Refinement layer: the journaled actor (§4 resolved) — single-writer crash/recover, record-vs-effect atomicity | no double-spent budget, no duplicate cycle, across crashes at any seam; a later controller migration re-proves the same refinement against the same machine |

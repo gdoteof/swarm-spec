@@ -1,4 +1,4 @@
-# specs/chuggy — the chuggy-model (PRs 1–3 + the notes reconciliation + citations)
+# specs/chuggy — the chuggy-model (PRs 1–4 + the notes reconciliation + citations)
 
 The fresh Quint model for **chuggy**, written *before* the system it
 specifies. Requirements and provenance: [docs/chuggy-charter.md](../../docs/chuggy-charter.md).
@@ -18,21 +18,28 @@ traces ship from here as versioned artifacts.
 
 | File | Module | What it is |
 |---|---|---|
-| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-ticket well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The machine was designed to fit this file. |
-| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. |
-| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. |
+| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-ticket well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The multi-repo PR is likewise **vocabulary, not digits**: `Ticket.repo` (the authored target) and the StepRecord's `landing` field (`LandingObs` — landing-boundary attribution: the attempt's repo + the environment's per-attempt `branchMoved` choice); the measure reads neither — repo-blindness is a header derivation (no digit, weight, or account radix touches `repo`; all radices derive from machine-wide consts), machine-pinned by `measureRepoBlindTest`. The machine was designed to fit this file. |
+| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the ticket record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. Multi-repo PR (roadmap PR 4): a ticket targets **exactly one repo** — `repo`, authored at arrival from `1..N_REPOS` (`repos` is the refusal rule) and immutable, with deps free to **cross repos** (the dep gate is Done-ness, not location); the `land` action draws the environment's per-attempt **`branchMoved`** choice and the outcome from `landOutcomes(moved)` — a quiet branch cannot fail (the envActive standing rule as a named nondet event, no stored flag); `decideLand` stamps every arm with the attempt's own-repo attribution; gate invariants `landingIsolation`, `quietRepoLandsCleanly`, `reposWellFormed`. |
+| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree`, `mc_chuggy_citations` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. Multi-repo PR: all four run **with repos enabled** (`N_REPOS = 2`: arrivals draw the authored target repo, landing attempts draw `branchMoved` — the smallest universe where own-repo attribution is distinguishable from a constant stamp). |
 | `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark. |
-| `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). |
+| `tests/chuggy_witness_test.qnt` | `chuggy_witness_free_test`, `chuggy_witness_cascade_test`, `chuggy_witness_stage_test`, `chuggy_witness_carry_test`, `chuggy_witness_multirepo_test` | **The deterministic reachability witnesses** (the witness-hardening PR) — the load-bearing half of the two-layer witness policy below. One module per witnessed shape, consts byte-identical to the mc instance the random layer samples; each run is a **machine trace** (`init.then(apply(decide*))` through guard-checked drivers — every accepted trace is a trace of `step`; mechanism note in the file header) that proves the shape reachable with **zero seeds**, asserts the witness verdict at the witnessing step, and asserts `allInvariants` after **every** step — which subsumed Stage 9's two pinned allInvariants twin runs. The carry module also pins the scope discipline (an intersecting footprint must respawn, not carry) — the deterministic catcher for a carry-despite-intersection mutant; the free module's climb step is the deterministic catcher for a `stepDescends` RetryFree-arm sign-flip (both mutation-verified). The multi-repo module (PR 4) carries the isolation gate's witness half — the machine's two new nondet draws each exercised on both branches: the landing choice pinned **quiet** (the landing succeeds, attributed), pinned **moved** (the gate rework AND the gate-budget wall carry `{repo, branchMoved: true}`), and the repo pick exercised off-default with a **cross-repo dep chain** (a repo-1 landing flips its repo-2 dependent to Ready in the same post-state — the dep gate proved location-blind on a machine trace). It has **no paired random probe**: landing attempts are dense in random exploration (unlike the carry), so the unseeded Stage 9 runs are its random side. |
 
 Checked by `scripts/check.sh` Stage 9 + 9b and `just chuggy`. **The
 two-layer witness policy** (Stage 9b, the witness-hardening PR — after the
 citations PR forced the fourth consecutive `freeClimbNever` seed re-pin):
 
-- **9b-DET, the deterministic layer — gates the build.** The four
-  machine-trace runs above (`quint test --main=<module>`): reachability of
-  each witnessed shape plus `allInvariants` along its whole trace, immune
-  to nondet drift, seeds nowhere. This layer guards **semantics** — if it
-  fails, the machine changed meaning (or a witness/invariant did).
+- **9b-DET, the deterministic layer — gates the build.** The five
+  machine-trace modules above (`quint test --main=<module>`): reachability
+  of each witnessed shape plus `allInvariants` along its whole trace,
+  immune to nondet drift, seeds nowhere. This layer guards **semantics** —
+  if it fails, the machine changed meaning (or a witness/invariant did).
+  The multi-repo PR extended this layer first, per its convention (new
+  nondet must have deterministic runs exercising both branches).
+- The unseeded instance runs are **not** landing-semantics coverage: at
+  2000×40 the random layer rarely completes landings on the multi-repo
+  instances, so landing mutants are caught by the unit and deterministic
+  witness layers — which is the two-layer design working as intended
+  (multi-repo review, observation B).
 - **9b-RND, the random layer — warns, never gates.** The four pinned-seed
   expected-violation probes (freeClimbNever / cascadeParkNever /
   stageAdvanceNever / carryNever, seed forensics preserved at each probe)
@@ -139,6 +146,91 @@ evaluators) is an implementation/policy concern worth an intake question,
 flagged for the `eval/vocabulary` confirmation rather than silently
 decided here.
 
+## The multi-repo PR — one orchestrator, many targets
+
+Roadmap **PR 4**; gate: **isolation invariants**. Provenance:
+`domain/firstclass` — both respondents picked multi-repo (option text:
+"Multiple repos — one orchestrator, many targets"), rank #3 of the charter
+§2 first-class order. Deliberately lean:
+
+**A ticket targets exactly one repo.** `Ticket.repo` is an authored field
+like deps and the program: drawn nondet at arrival from the bounded
+universe `1..N_REPOS` (`repos` is the refusal rule — the `validPrograms`
+shape; `reposWellFormed` makes it durable) and immutable after. The DAG
+stays **orchestrator-level**: dependencies may cross repos, because the
+dep gate is Done-ness, not location (`depsDoneIn` reads phase alone).
+That is the lean reading of "one orchestrator, many targets" — forbidding
+cross-repo edges would be new machinery with no charter provenance. The
+cross-repo unblock is a deterministic machine trace
+(`crossRepoDepDeterministicTest`: a repo-1 landing flips its repo-2
+dependent to Ready in the same post-state), and location-blindness is
+pinned at decider grain too (`crossRepoDepGateLocationBlindTest`).
+
+**Landing failure is conditional and per-repo — the envActive standing
+rule honored.** Before this PR the `land` action drew `LandFailed`
+unconditionally: failure was always drawable and carried no cause. Now
+the environment first chooses, **per landing attempt**, whether the
+target repo's default branch **moved** under the candidate — a fresh
+nondet draw at every attempt, never stored state (the triage's standing
+rule from the `envActive` note: landing-failure conditions enter as
+explicitly named nondet events, never a stored mystery flag) — and draws
+the outcome from what that choice permits (`landOutcomes`): a **quiet
+branch always lands cleanly** (v1's §4 insight — the moving default
+branch is the *only* reason a landing can fail — now per-repo and
+per-attempt), while a **moved** branch may fail *or* still integrate
+(v1's all-outcomes-while-active shape: the move makes failure possible,
+never certain). v1's stored `envActive` quiescence flag did **not**
+return; the §4 quiescence theorem stays deferred.
+
+**Per-repo attribution.** The StepRecord gained exactly one field —
+`landing: LandingObs` — stamped `LOAttempt({repo, branchMoved})` on every
+step that **resolves** a landing attempt (both success outcomes, the gate
+rework, and both landing walls) and `LONone` everywhere else (including
+`eval-passed`, which merely enqueues, and the absorbed `land-duplicate`).
+The repo cannot ride the effect strings (no dynamic strings at this
+grain), so the minimal extension is structural; labels, effects, account
+deltas, and pricing are byte-identical to the pre-multi-repo machine.
+
+**The isolation invariants (the gate):**
+
+- `landingIsolation` — a step-invariant over `lastStep` (the
+  `stepDescends` pattern): a step carries `LOAttempt` **iff** it resolves
+  a landing attempt; the attribution names the stepped ticket's **own**
+  repo, from inside the universe; and a gate-**failure** step carries
+  `branchMoved = true` — a landing can fail **only via its own repo's
+  branch moving**. No other repo's choice exists anywhere in the step to
+  leak in (the environment draws `branchMoved` for the target repo
+  alone), and the completeness arm forbids resolving a landing
+  off-record.
+- `quietRepoLandsCleanly` — the strongest **checkable** form of "a quiet
+  repo's tickets never gate-fail", stated honestly about what kind of
+  theorem it is: "quiet" is a per-attempt environment choice, not stored
+  repo state, so the naive repo-quantified reading is not a predicate
+  over any reachable state. The **state theorem** (checked on every
+  reachable step) is the per-attempt form — an attempt the environment
+  chose quiet resolves as `ticket-done`, full stop. The **trace-level**
+  reading is deliberately discharged as deterministic witness traces:
+  `quietLandDeterministicTest` (every draw pinned quiet, the landing
+  succeeds) and `movedReworkAttributedTest` (pinned moved, the rework and
+  the wall each attributed).
+- **Repo-blindness** — the measure and every budget never read `repo`: a
+  comment-level theorem whose derivation lives in measure.qnt (no digit,
+  weight, or account radix touches the field; every radix derives from
+  the machine-wide `GAS`/`GATE_PRICING`/`REWORK_POLICY`), machine-pinned
+  by `measureRepoBlindTest` (equal `ticketMeasure` across repos, phase by
+  phase, under both pricings). `landingExclusive` stays **per-ticket** —
+  strictly stronger than any per-repo exclusivity (exactly one landing
+  per ticket implies at most one per ticket per repo) — deliberately not
+  weakened.
+
+**Deliberately NOT done** — none of it has charter provenance: per-repo
+**policies**, per-repo **budgets** (would break the repo-blindness
+theorem; the charter's accounts are per-ticket), per-repo **queues** (a
+queue is a §2 non-goal in any shape), and any repo vocabulary below the
+landing boundary (work/eval never read the repo). `N_REPOS = 1` recovers
+the single-repo machine exactly: every draw collapses and the
+attribution field goes constant.
+
 ## The PR 3 eval vocabulary — extracted, standing in
 
 The intake question `eval/vocabulary` ("write the eval spec for one real
@@ -179,7 +271,7 @@ short-circuit → the same decider's failure arm routing into the **existing**
 rework/escalation economy; the chronological task log → `Ticket.record` with
 history-unique sequential ids; revoke's force-close → `TCancelled`.
 
-## What the model claims (PRs 1–3 + notes + citations)
+## What the model claims (PRs 1–4 + notes + citations)
 
 - **Effect-only exclusivity** (charter §2): any number of task executions
   may run and duplicate — the fabric is at-least-once, `no-double-pods` was
@@ -240,6 +332,20 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 - **Landing outcomes precisely named** (charter §2): `AdvanceDefault` ≠
   `SquashMerge` from day one — v1's one conformance divergence lived
   exactly there. Mechanics stay abstract (PR 5).
+- **Multi-repo, isolated at the landing boundary** (the PR 4 gate): a
+  ticket targets exactly one authored repo (`repo`, arrival-drawn from
+  `1..N_REPOS`, immutable); dependencies may **cross repos** — the dep
+  gate reads Done-ness, never location; a landing can fail **only via its
+  own repo's default branch moving** — the environment's per-attempt
+  `branchMoved` choice, an explicitly named nondet event on the step
+  record (never a stored flag; the envActive standing rule), with
+  `LandFailed` drawable only on a moved branch (`landOutcomes`) — and
+  every step resolving a landing attempt carries its own-repo
+  attribution (`landingIsolation`, `quietRepoLandsCleanly`,
+  `reposWellFormed`; deterministic witnesses for quiet-clean,
+  moved-attributed, and the cross-repo unblock). The measure and all
+  budgets are **repo-blind** (`measureRepoBlindTest`), and
+  `landingExclusive` stays per-ticket — stronger than per-repo needs.
 - **The dispatcher is agentic and modeled as such** (notes PR): dispatch
   is a first-class decision — the nondet pick among Ready tickets is the
   dispatcher's own agency, recorded as the `dispatch` event; any
@@ -292,10 +398,10 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 | **Abort verdict** (`abort: true` skips remaining rework budget, §1.2/§3.3) and **infra-fail escalates immediately** (§3.3 reduce) | Folded into `TFailed`-fails-the-stage: the charter's evaluator-crash row prices all of it identically (**the ticket pays**, one account). The chuggernaut distinction is real, though — **flagged as a question for the intake `eval/vocabulary` confirmation**, not silently adopted or silently dropped. |
 | **The approval gate** (a synthesized required Human evaluator at `max(stage)+1`, §3.3) | Not synthesized by the model: it is *expressible* as data (a final stage); synthesizing it at resolution time is an authoring/implementation concern. |
 | Dep re-authoring (editing a doomed ticket's deps out of a revoked chain) | Not scheduled; the `dependency_revoked` wall's only modeled exit is revoke (the documented table-line-44 deviation at `retryableIn`). |
-| Multi-repo | **PR 4** (isolation invariants). |
+| **Per-repo policies / budgets / queues** (multi-repo PR) | **Never scheduled — no charter provenance**: the charter's accounts are per-ticket (§2), a queue is a §2 non-goal in any shape, and a per-repo budget would break the measure's repo-blindness theorem (measure.qnt, multi-repo header note). A repo is a landing-boundary attribute of a ticket, not an economy. |
 | Merge-queue + landing mechanics | **PR 5**, deliberately last, driven by `landing/requirements` once answered. Only the outcome names are pinned now. |
 | Refinement layer (the journaled actor — single-writer crash/recover, record-vs-effect atomicity) | Resolved to the **journaled actor** (charter §4, offline 2026-08-12): roadmap **PR 6**. |
-| System-quiescence theorem (v1's `envActive`/`quiesce` apparatus) | Charter §4's contested half. Per-ticket is the committed theorem; quiescence would return in a severable module that constrains nothing if abandoned. |
+| System-quiescence theorem (v1's `envActive`/`quiesce` apparatus) | Charter §4's contested half. Per-ticket is the committed theorem; quiescence would return in a severable module that constrains nothing if abandoned. The multi-repo PR deliberately did **not** resurrect the flag: the branch-moved condition is a per-attempt named nondet draw on the step record, not stored env state. |
 | Scheduler, agent-slot count, FIFO ready queue | **Non-goal** (charter §2). Dispatch is the agentic dispatcher's unrestricted nondet pick among Ready tickets — modeled as its decision, not as a queue (notes PR). |
 | Token/API spend | **Never** a model variable (charter §2 currency row; chuggernaut's per-task `token_usage` stays implementation accounting). |
 | Multi-tenancy, dynamic DAGs, cross-cluster | In scope by silence (charter §3) but admitted in **no** PR yet. Programs are authored at arrival, and no ticket-event decider creates tickets or rewrites programs. |

@@ -59,6 +59,36 @@
 /// DERIVED from the retained record's work entries, standing rule 3);
 /// the measure reads none of it.
 ///
+/// THE MULTI-REPO PR (chuggy-charter.md §6 roadmap PR 4; provenance: both
+/// respondents picked multi-repo in `domain/firstclass` — the option text
+/// is "Multiple repos — one orchestrator, many targets" — and rank #3 of
+/// the §2 first-class order) touches NO digit and NO weight: standing
+/// rule 1 held a sixth time by PROOF rather than surgery. What changed is
+/// vocabulary, which lives in this file:
+///   - `Ticket.repo` — the ticket's TARGET REPO, an authored field like
+///     deps and the program (chosen at arrival, immutable after). The
+///     MEASURE NEVER READS IT — the repo-blindness theorem, by
+///     derivation: ticketMeasure reads gasLeft, gateLeft, reworkLeft,
+///     and micro (phase rank, stagesLeft over program+tasks,
+///     runningCount) — `repo` appears in none of them, and every account
+///     radix derives from machine-wide consts (GAS, GATE_PRICING,
+///     REWORK_POLICY), none per-repo. Two tickets identical but for
+///     `repo` have EQUAL ticketMeasure (pinned in tests/chuggy_test.qnt,
+///     measureRepoBlindTest). Per-repo budgets/policies would break this
+///     theorem and have NO charter provenance — deliberately not done
+///     (README).
+///   - `LandingObs` + the StepRecord's `landing` field — the
+///     landing-boundary attribution the golden traces need: WHICH repo a
+///     landing attempt targeted and whether the environment chose that
+///     repo's default branch to have MOVED under the candidate
+///     (docs/chuggernaut.md §4: the moving default branch is the ONLY
+///     reason a landing can fail). The choice is a PER-ATTEMPT nondet
+///     event named in the step record — never stored state (the
+///     envActive standing rule, docs/chuggy-notes-triage.md "already
+///     true": landing-failure conditions enter as explicitly named
+///     nondet events, never a stored mystery flag). The measure reads
+///     none of it.
+///
 /// The measure is LEXICOGRAPHIC over the bounded accounts, most significant
 /// first, flattened into one nonnegative integer by radix weighting (every
 /// digit is bounded by its radix, so the integer order IS the lexicographic
@@ -310,7 +340,8 @@ module chuggy_measure {
   // here because they live in the same module-wide constructor namespace.
   // PR 3 added TK (TaskKind); the notes PR adds TS (TaskState — the
   // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
-  // one TS constructor (TSCarried) and no new prefix.
+  // one TS constructor (TSCarried) and no new prefix; the multi-repo PR
+  // adds LO (LandingObs — the landing-boundary attribution).
 
   /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
   /// don't store): Blocked and Ready are PREDICATES over deps + record in
@@ -521,13 +552,54 @@ module chuggy_measure {
   /// distinct from day one — v1's single conformance divergence was exactly
   /// AdvanceDefault vs SquashMerge (charter §2 landing row); mechanics stay
   /// abstract until landing/requirements is answered (roadmap PR 5).
+  /// Multi-repo PR: which outcomes the environment may DRAW for an attempt
+  /// depends on its branchMoved choice — domain.qnt landOutcomes (a quiet
+  /// branch always lands cleanly, so LandFailed is drawable only on a
+  /// moved branch).
   type LandOutcome = LandAdvanceDefault | LandSquashMerge | LandFailed
+
+  /// THE LANDING-BOUNDARY OBSERVATION (multi-repo PR — the roadmap PR 4
+  /// gate's attribution half): every step that RESOLVES a landing attempt
+  /// carries LOAttempt with
+  ///   - `repo`: the ticket's target repo — golden traces must be
+  ///     per-repo attributable, and the repo cannot ride the effect
+  ///     strings (no dynamic strings at this grain), so the step record
+  ///     carries it structurally;
+  ///   - `branchMoved`: the environment's PER-ATTEMPT choice of whether
+  ///     the target repo's default branch moved under the candidate — the
+  ///     ONLY reason a landing can fail (docs/chuggernaut.md §4; v1's
+  ///     LConflictOrGateFail existed only while envActive). This is the
+  ///     envActive standing rule (docs/chuggy-notes-triage.md, "already
+  ///     true" row) honored: an explicitly NAMED nondet event on the
+  ///     trace, never a stored env flag — there is no per-repo "active"
+  ///     variable anywhere, and quiet/moved is chosen fresh at every
+  ///     attempt (derive-don't-store applied to the environment).
+  /// Every other step — including eval-passed (which merely ENQUEUES the
+  /// landing) and land-duplicate (an absorbed re-delivery: no attempt
+  /// resolves, nothing is emitted) — carries LONone. The iff is the
+  /// landingIsolation invariant (domain.qnt).
+  type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
 
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
     phase: Phase,
     // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
+    // Multi-repo PR: deps may CROSS repos — the dep gate is Done-ness, not
+    // location (domain.qnt depsDoneIn reads phase alone; the lean reading
+    // of "one orchestrator, many targets": the DAG stays
+    // orchestrator-level, and forbidding cross-repo edges would be new
+    // machinery with no charter provenance).
     deps: Set[int],
+    // THE TARGET REPO (multi-repo PR, roadmap PR 4 — charter §2
+    // first-class order rank #3; `domain/firstclass`, both respondents:
+    // "Multiple repos — one orchestrator, many targets"): a ticket targets
+    // EXACTLY ONE repo, an AUTHORED field like deps and the program —
+    // chosen at arrival from the bounded universe 1..N_REPOS (domain.qnt
+    // repos; reposWellFormed) and immutable after. NOT a measure input:
+    // no digit, weight, or account radix reads it (the repo-blindness
+    // theorem — derivation in this file's multi-repo header note), and no
+    // budget is per-repo (deliberately: no charter provenance — README).
+    repo: int,
     // PR 3: THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // arrives with the Draft (which is exactly why authoring came first,
     // first-class order charter §2) and is immutable after arrival, like
@@ -630,8 +702,17 @@ module chuggy_measure {
   type Transition = { ticket: int, from: Phase, to: Phase }
 
   /// One decision's observable record, mirroring the golden-trace step
-  /// schema {event, transitions, effects}.
-  type StepRecord = { label: str, transitions: List[Transition], effects: List[str] }
+  /// schema {event, transitions, effects} — extended by the multi-repo PR
+  /// with the landing-boundary attribution field (`landing`, LONone on
+  /// every non-landing step; see LandingObs): the minimal StepRecord
+  /// extension that keeps golden traces per-repo attributable at the one
+  /// boundary where the repo matters.
+  type StepRecord = {
+    label: str,
+    transitions: List[Transition],
+    effects: List[str],
+    landing: LandingObs
+  }
 
   /// What a pure decider returns: record performed + post-state.
   type Decision = { rec: StepRecord, post: Core }

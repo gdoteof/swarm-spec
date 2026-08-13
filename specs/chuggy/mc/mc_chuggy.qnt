@@ -41,6 +41,19 @@
 /// feeds Stage 9b's fourth expected-violation run (carryNever, the
 /// carry-reachability probe).
 ///
+/// MULTI-REPO PR (roadmap PR 4): every instance runs WITH REPOS ENABLED —
+/// N_REPOS = 2, the smallest universe where per-repo attribution is
+/// distinguishable from global attribution. Arrivals draw the ticket's
+/// target repo (a third authored nondet draw) and every landing attempt
+/// draws the environment's per-attempt branchMoved choice, with the
+/// outcome drawn from landOutcomes(moved) — LandFailed drawable only on a
+/// moved branch. allInvariants gained landingIsolation,
+/// quietRepoLandsCleanly, and reposWellFormed. The two new draws changed
+/// the simulator's nondet structure YET AGAIN — every 9b-RND seed
+/// re-examined; forensics in scripts/check.sh (warn-only since the
+/// witness-hardening PR: the deterministic layer, including the new
+/// multi-repo witness module, is the gate).
+///
 /// Imports are not re-exported by the chuggy_domain instance, so each
 /// module pulls the vocabulary (constructors used in --invariant
 /// expressions and in the instantiation itself) from chuggy_measure
@@ -58,7 +71,8 @@ module mc_chuggy_budgeted {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 }
 
@@ -76,7 +90,8 @@ module mc_chuggy_deadline_only {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 }
 
@@ -102,7 +117,8 @@ module mc_chuggy_retryfree {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 }
 
@@ -139,6 +155,7 @@ module mc_chuggy_citations {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
-    N_REGIONS = 2
+    N_REGIONS = 2,
+    N_REPOS = 2
   ).* from "../domain"
 }

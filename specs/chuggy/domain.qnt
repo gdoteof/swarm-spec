@@ -96,6 +96,49 @@
 /// carried; footprint trust is an implementation/policy concern, flagged
 /// as an intake question (README).
 ///
+/// THE MULTI-REPO PR (roadmap PR 4; gate: ISOLATION INVARIANTS.
+/// Provenance: `domain/firstclass`, both respondents picked multi-repo —
+/// option text "Multiple repos — one orchestrator, many targets" — rank #3
+/// of the §2 first-class order) is IN, deliberately lean:
+///   - A ticket targets EXACTLY ONE repo: `Ticket.repo`, an AUTHORED field
+///     like deps and the program, drawn nondet at arrival from the bounded
+///     universe 1..N_REPOS and immutable after (reposWellFormed).
+///   - The DAG stays ORCHESTRATOR-LEVEL: dependencies may CROSS repos —
+///     the dep gate is Done-ness, not location (depsDoneIn reads phase
+///     alone; the lean reading of "one orchestrator, many targets" —
+///     forbidding cross-repo edges would be NEW machinery with no charter
+///     provenance). The cross-repo unblock is witnessed deterministically
+///     (tests/chuggy_witness_test.qnt, crossRepoDepDeterministicTest).
+///   - LANDING FAILURE IS CONDITIONAL AND PER-REPO, honoring the envActive
+///     standing rule (docs/chuggy-notes-triage.md, "already true" row:
+///     landing-failure conditions enter as explicitly named nondet events,
+///     NEVER a stored mystery flag): the environment CHOOSES, per landing
+///     attempt, whether the target repo's default branch MOVED under the
+///     candidate (the `land` action's branchMoved draw), and LandFailed is
+///     drawable ONLY on a moved branch (landOutcomes — v1's §4 insight
+///     made per-repo: docs/chuggernaut.md §4, the moving default branch is
+///     the ONLY reason a landing can fail; a quiet branch always lands
+///     cleanly). NO stored env state: quiet/moved is chosen fresh at every
+///     attempt and recorded on the step (StepRecord.landing, LOAttempt
+///     with repo + branchMoved — the per-repo trace attribution the gate
+///     demands). Before this PR the `land` action drew LandFailed
+///     unconditionally with no cause on the trace; v1's stored `envActive`
+///     quiescence flag stays deferred with §4's contested theorem.
+///   - THE ISOLATION INVARIANTS (the gate): landingIsolation (a step that
+///     resolves a landing attempt is attributed to the stepped ticket's
+///     OWN repo, and a gate-failure step carries branchMoved = true — a
+///     landing can fail only via its own repo's branch moving),
+///     quietRepoLandsCleanly (the stated per-attempt corollary: an
+///     attempt the environment chose quiet is a success step), and
+///     reposWellFormed. The MEASURE and all budgets stay REPO-BLIND
+///     (measure.qnt, multi-repo header note — the derivation; pinned in
+///     measureRepoBlindTest), and landingExclusive stays PER-TICKET —
+///     stronger than any per-repo exclusivity, deliberately not weakened.
+///   - Deliberately NOT modeled: per-repo policies, budgets, or queues
+///     (no charter provenance — the charter's accounts are per-ticket and
+///     its non-goals exclude queues), and any repo vocabulary below the
+///     landing boundary (work/eval never read the repo).
+///
 /// What is deliberately NOT here (and which roadmap PR restores it):
 ///   - Batched + the merge queue it serves (PR 5) — the v1 table's Batched
 ///     rows (table.qnt lines 27-30) are deliberately not transcribed yet,
@@ -105,7 +148,7 @@
 ///     from authoring as v1's table had it (README, deliberately-absent
 ///     table); chuggernaut's STAGED MERGE GATE (spec.md §3.3 Merge Gate
 ///     item 3 — gate stages, the gate-fix fast path) defers WITH it;
-///   - multi-repo (PR 4); merge-queue + landing mechanics (PR 5);
+///   - merge-queue + landing mechanics (PR 5);
 ///   - scheduler/capacity: NO agent-slot count, NO FIFO ready queue —
 ///     charter §2 non-goals (no bespoke scheduler) plus the trusted fabric
 ///     axioms (quota/scheduling): dispatch is a nondet pick among Ready
@@ -170,11 +213,24 @@ module chuggy_domain {
   /// by evaluators citing Set() (which means "rerun me"), not by an empty
   /// universe — init requires the universe to exist.
   const N_REGIONS: int
+  /// Multi-repo PR: the size of the bounded repo universe a ticket's
+  /// authored target is drawn from (small in mc instances: 2 — the
+  /// smallest universe where "its OWN repo's branch moved" is
+  /// distinguishable from "some repo's branch moved"). Like N_REGIONS,
+  /// NOT a measure bound: no digit reads the repo (measure.qnt, multi-repo
+  /// header note), and no account is per-repo. The single-repo world is
+  /// N_REPOS = 1, under which every draw collapses and the machine is the
+  /// pre-multi-repo machine with a constant attribution field.
+  const N_REPOS: int
 
   /// The citation universe (citations PR): every footprint — evaluator
   /// citation or work touch set — is a subset of this
   /// (citationsWellFormed).
   pure val regions: Set[int] = 1.to(N_REGIONS)
+
+  /// The repo universe (multi-repo PR): every ticket's authored target repo
+  /// is a member (reposWellFormed); arrivals draw from exactly this set.
+  pure val repos: Set[int] = 1.to(N_REPOS)
 
   /// The measure's bounds, from this instance's consts.
   pure val bounds: Bounds = {
@@ -223,10 +279,13 @@ module chuggy_domain {
   /// the released pipeline only through decideRelease. PR 3: the author's
   /// eval PROGRAM arrives with the Draft (eval is data; authoring came
   /// first precisely so programs would have an arrival to ride).
-  pure def freshTicket(deps_: Set[int], prog: List[Stage]): Ticket = {
+  /// Multi-repo PR: the TARGET REPO arrives the same way — authored data
+  /// riding the arrival, immutable after, like deps and the program.
+  pure def freshTicket(deps_: Set[int], prog: List[Stage], repo_: int): Ticket = {
     phase: PDraft,
     deps: deps_,
     program: prog,
+    repo: repo_,
     tasks: Set(),
     record: [],
     spawned: 0,
@@ -251,18 +310,35 @@ module chuggy_domain {
   /// transition (golden-trace shaped, standing rule 4). PR 3: from == to is
   /// a real row now — the stage advance records
   /// Evaluating -> Evaluating (chuggernaut spec.md §2.1 line 832).
+  /// Multi-repo PR: `landing` is LONone here — only decideLand resolves a
+  /// landing attempt, and it stamps its own attribution over this default
+  /// (withLandingObs).
   pure def move(c: Core, j: int, to_: Phase, label: str, effects_: List[str]): Decision =
     { rec: {
         label: label,
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: to_ }],
-        effects: effects_ },
+        effects: effects_,
+        landing: LONone },
       post: withTicket(c, j, { ...c.tickets.get(j), phase: to_ }) }
 
   /// A decision that changes nothing — the idempotent answer to duplicate
   /// deliveries (at-least-once fabric, charter §2: no-double-pods dropped,
-  /// every effect idempotent).
+  /// every effect idempotent). No landing attempt resolves here (a
+  /// duplicate landing delivery absorbs with nothing emitted), so the
+  /// attribution field stays LONone.
   pure def noop(c: Core, label: str): Decision =
-    { rec: { label: label, transitions: [], effects: [] }, post: c }
+    { rec: { label: label, transitions: [], effects: [], landing: LONone }, post: c }
+
+  /// Stamp the landing-boundary attribution on a decision (multi-repo PR):
+  /// decideLand routes EVERY arm through this, so each step that resolves
+  /// a landing attempt — both successes, the gate rework, and both
+  /// landing walls — carries the target repo and the environment's
+  /// branchMoved choice for that attempt (landingIsolation checks the
+  /// iff; the trace consumer gets per-repo attribution at exactly the
+  /// boundary where the repo matters).
+  pure def withLandingObs(d: Decision, repo_: int, moved: bool): Decision =
+    { rec: { ...d.rec, landing: LOAttempt({ repo: repo_, branchMoved: moved }) },
+      post: d.post }
 
   // --- Authoring (PR 2, reshaped by the notes PR): arrival, release, ------
   // revoke. Vocabulary source: specs/chuggernaut/table.qnt (verbatim from
@@ -300,10 +376,20 @@ module chuggy_domain {
   /// by enablement, not absorbed as duplicates: authors are command
   /// sources, not the at-least-once fabric — only fabric events get
   /// idempotent stutter deciders.
-  pure def decideArrive(c: Core, deps_: Set[int], prog: List[Stage]): Decision =
+  ///
+  /// Multi-repo PR: the arrival also carries the ticket's TARGET REPO —
+  /// callers guarantee repo_ ∈ repos (the `arrive` action draws from
+  /// exactly that set), so an out-of-universe target is refused at
+  /// authoring time like an ill-formed program (reposWellFormed makes the
+  /// refusal durable). Deps are NOT constrained by repo: the DAG is
+  /// orchestrator-level and dependencies may cross repos — the dep gate
+  /// downstream (depsDoneIn) reads Done-ness, never location.
+  pure def decideArrive(
+      c: Core, deps_: Set[int], prog: List[Stage], repo_: int): Decision =
     val id = c.tickets.keys().size() + 1
-    { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"] },
-      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog)) } }
+    { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"],
+        landing: LONone },
+      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, repo_)) } }
 
   /// Draft -> Pending (table line 21 `(Draft, Ready | Blocked | ...)`):
   /// the ticket enters the released pipeline. The table's Ready/Blocked
@@ -397,7 +483,8 @@ module chuggy_domain {
         // "Revoke" for the revoked ticket; one OpenHumanTask per parked
         // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"].concat(parkedList.foldl([], (l, k) =>
-          l.append("OpenHumanTask"))) },
+          l.append("OpenHumanTask"))),
+        landing: LONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
           { ...retireLive(c.tickets.get(k)), phase: PRevoked,
@@ -564,7 +651,7 @@ module chuggy_domain {
   pure def decideTaskDone(
       c: Core, j: int, tid: int, v: Verdict, cited_: Set[int]): Decision =
     if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
-      { rec: { label: "task-done", transitions: [], effects: [] },
+      { rec: { label: "task-done", transitions: [], effects: [], landing: LONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
             match v { | VPass => TPassed | VFail => TFailed }, cited_) }) }
@@ -690,6 +777,26 @@ module chuggy_domain {
       escalate(c, j, REvaluating, RsGasExhausted,
         "ticket-escalated gas_exhausted")
 
+  /// The outcomes the environment may DRAW for a landing attempt, given
+  /// its own branchMoved choice for the target repo (multi-repo PR): a
+  /// QUIET branch always lands cleanly — v1's §4 insight
+  /// (docs/chuggernaut.md §4: the moving default branch is "the ONLY
+  /// reason a landing can fail; a quiet branch always lands cleanly";
+  /// v1's LConflictOrGateFail existed only while envActive), now chosen
+  /// PER ATTEMPT and PER REPO instead of gated on a stored global flag
+  /// (the envActive standing rule, docs/chuggy-notes-triage.md). A MOVED
+  /// branch may still land cleanly — the move makes failure POSSIBLE, not
+  /// certain (the stale candidate may integrate anyway), exactly v1's
+  /// all-outcomes-while-active shape. This definition IS the draw rule
+  /// (the validPrograms/dependableTickets structural-refusal shape):
+  /// the `land` action draws from exactly this set, the witness drivers
+  /// reference it as their guard, and decideLand's callers guarantee
+  /// membership — so no reachable step resolves a quiet attempt as
+  /// LandFailed (landingIsolation makes the refusal durable).
+  pure def landOutcomes(moved: bool): Set[LandOutcome] =
+    if (moved) Set(LandAdvanceDefault, LandSquashMerge, LandFailed)
+    else Set(LandAdvanceDefault, LandSquashMerge)
+
   /// The landing resolves. Mechanics abstract (charter §2 landing row,
   /// deferred to PR 5) but OUTCOMES precisely named from day one: the two
   /// success effects AdvanceDefault and SquashMerge are distinct — v1's one
@@ -701,8 +808,20 @@ module chuggy_domain {
   /// name. (Chuggernaut's own merge gate runs STAGED — spec.md §3.3 Merge
   /// Gate item 3 — but that structure is deferred to PR 5 with the gate
   /// itself; here the gate stays one abstract outcome.)
-  pure def decideLand(c: Core, j: int, out: LandOutcome): Decision =
-    match out {
+  ///
+  /// Multi-repo PR: the attempt's cause vocabulary is per-repo now. The
+  /// event carries `moved` — the environment's per-attempt choice of
+  /// whether THIS ticket's target repo's default branch moved under the
+  /// candidate (callers guarantee out ∈ landOutcomes(moved), so a failure
+  /// implies moved) — and EVERY arm stamps the step with the attempt's
+  /// attribution (withLandingObs: the ticket's own repo + the choice), so
+  /// the golden trace attributes each landing resolution, success or
+  /// failure, to its repo and its cause. Accounts, labels, effects, and
+  /// pricing are byte-identical to the pre-multi-repo decider: what
+  /// changed is WHEN failure is drawable (only on a move) and WHAT the
+  /// step record says (which repo, and whether it moved).
+  pure def decideLand(c: Core, j: int, out: LandOutcome, moved: bool): Decision =
+    withLandingObs(match out {
       | LandAdvanceDefault =>
         move(
           withTicket(c, j, { ...c.tickets.get(j), landings: c.tickets.get(j).landings + 1 }),
@@ -736,7 +855,7 @@ module chuggy_domain {
               escalate(c, j, RLanding, RsGasExhausted,
                 "ticket-escalated gas_exhausted")
         }
-    }
+    }, c.tickets.get(j).repo, moved)
 
   /// A duplicate landing event for an already-Done ticket (at-least-once: a
   /// stale executor re-delivers). NO landing effect is emitted — this
@@ -929,10 +1048,11 @@ module chuggy_domain {
     N_TICKETS >= 1,         // the arrival bound must admit at least one ticket
     MAX_STAGES >= 1,     // PR 3: at least one authorable program must exist
     N_REGIONS >= 1,      // citations PR: the region universe must exist
+    N_REPOS >= 1,        // multi-repo PR: a ticket needs a repo to target
     reworkBudget(REWORK_POLICY) >= 0,
     gateBudget(GATE_PRICING) >= 0,
     tickets' = Map(),
-    lastStep' = { label: "init", transitions: [], effects: [] },
+    lastStep' = { label: "init", transitions: [], effects: [], landing: LONone },
     prevMeasure' = 0,
     prevRecords' = Map()
   }
@@ -945,14 +1065,19 @@ module chuggy_domain {
   /// authoring time, see decideArrive/dependableTickets) — and (PR 3) its
   /// eval PROGRAM a nondet pick among the WELL-FORMED programs: the
   /// machine explores every authorable program, and ill-formed ones are
-  /// refused structurally (validPrograms is the refusal rule). AUTHORING
+  /// refused structurally (validPrograms is the refusal rule). Multi-repo
+  /// PR: the author also picks the ticket's TARGET REPO from the bounded
+  /// universe — the third authored draw, refused structurally the same
+  /// way (repos is the rule) — and deps stay UNCONSTRAINED by it: the
+  /// author may depend across repos (decideArrive's doc). AUTHORING
   /// set in the measure: climbs by the fresh Draft's whole ticketMeasure,
   /// bounded by N_TICKETS.
   action arrive = all {
     canArrive,
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
-    apply(decideArrive(core, deps_, prog))
+    nondet repo_ = repos.oneOf()
+    apply(decideArrive(core, deps_, prog, repo_))
   }
 
   /// Author releases a Draft into the pipeline (table line 21;
@@ -1054,14 +1179,22 @@ module chuggy_domain {
     apply(decideEvalStageReduce(core, j))
   }
 
-  /// The landing resolves, nondet over the three named outcomes. No
-  /// quiescence gate on LandFailed (v1 had envActive) — the environment
-  /// layer is deferred with §4's contested quiescence theorem.
+  /// The landing resolves (multi-repo PR): the environment first CHOOSES,
+  /// for this attempt, whether the target repo's default branch MOVED
+  /// under the candidate — an explicitly named nondet event (the envActive
+  /// standing rule: no stored flag; docs/chuggy-notes-triage.md), fresh at
+  /// every attempt — then draws the outcome from what that choice permits
+  /// (landOutcomes: a quiet branch cannot fail). Pre-multi-repo this
+  /// action drew LandFailed unconditionally with no cause on the trace;
+  /// v1's stored envActive quiescence gate stays deferred with §4's
+  /// contested theorem — what landed here is only the per-attempt,
+  /// per-repo CAUSE of failure, named and trace-attributed.
   action land = all {
     landingTickets.size() > 0,
     nondet j = landingTickets.oneOf()
-    nondet out = Set(LandAdvanceDefault, LandSquashMerge, LandFailed).oneOf()
-    apply(decideLand(core, j, out))
+    nondet moved = Set(true, false).oneOf()
+    nondet out = landOutcomes(moved).oneOf()
+    apply(decideLand(core, j, out, moved))
   }
 
   /// At-least-once: a duplicate landing event for a Done ticket. Must emit
@@ -1094,7 +1227,7 @@ module chuggy_domain {
   action settle = all {
     quiet,
     tickets' = tickets,
-    lastStep' = { label: "settled", transitions: [], effects: [] },
+    lastStep' = { label: "settled", transitions: [], effects: [], landing: LONone },
     prevMeasure' = currentMeasure,
     prevRecords' = currentRecords
   }
@@ -1127,7 +1260,10 @@ module chuggy_domain {
   /// but the landing effect is emitted exactly once per ticket, exactly when
   /// it is Done. "Per cycle" collapses to "per ticket" because a landing
   /// effect ends the ticket (PDone is absorbing) and failed landings emit no
-  /// landing effect.
+  /// landing effect. Multi-repo PR: DELIBERATELY UNCHANGED — per-ticket
+  /// exclusivity is strictly stronger than any per-repo form (exactly one
+  /// landing per ticket implies at most one per ticket per repo), so the
+  /// multi-repo gate needs nothing weaker and gets nothing weaker.
   val landingExclusive: bool = liveTickets.forall(j => and {
     tickets.get(j).landings <= 1,
     (tickets.get(j).landings == 1) iff (tickets.get(j).phase == PDone)
@@ -1144,6 +1280,88 @@ module chuggy_domain {
   /// stated-corollary treatment as deskVisibility.
   val revokedNeverLands: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == PRevoked) implies (tickets.get(j).landings == 0))
+
+  // --- Isolation invariants (THE MULTI-REPO PR 4 gate) ----------------------
+
+  /// LANDING ISOLATION (the gate's attribution half) — a step-invariant
+  /// over lastStep, the stepDescends pattern. Reading it as an iff:
+  ///
+  ///   - A step carrying a landing attempt (LOAttempt) is EXACTLY a step
+  ///     that resolves one: single ticket, one of the four
+  ///     landing-resolution labels (ticket-done, the gate rework, the two
+  ///     landing walls), the attribution naming the stepped ticket's OWN
+  ///     repo (repo is immutable, so reading it from the post-state is
+  ///     reading the authored field) from inside the repo universe.
+  ///   - THE ISOLATION CLAIM: a gate-FAILURE step (any attempt that is
+  ///     not the ticket-done success) carries branchMoved = true — a
+  ///     landing can fail ONLY via its own repo's branch moving. There is
+  ///     no cross-repo path to a failure: the attempt's attribution IS
+  ///     the ticket's repo (the own-repo conjunct), and no other repo's
+  ///     choice appears anywhere in the step (the environment draws
+  ///     branchMoved for the target repo alone — nothing else exists to
+  ///     leak in).
+  ///   - Completeness: a step with NO attempt (LONone) carries none of
+  ///     the uniquely-landing labels — a landing is never resolved
+  ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
+  ///     eval side, so it is legitimately LONone there — pinned in
+  ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
+  ///     land-duplicate absorbs with nothing emitted and is not an
+  ///     attempt.)
+  ///
+  /// Together with landOutcomes (the draw rule the `land` action and the
+  /// witness drivers share) this is the refusal made durable: the machine
+  /// cannot DRAW a quiet failure, and this invariant checks that no
+  /// reachable step RECORDS one.
+  val landingIsolation: bool = match lastStep.landing {
+    | LONone => and {
+        lastStep.label != "ticket-done",
+        lastStep.label != "rework-started gate_failure",
+        lastStep.label != "ticket-escalated gate_budget_exhausted"
+      }
+    | LOAttempt(a) => and {
+        repos.contains(a.repo),
+        lastStep.transitions.length() == 1,
+        tickets.get(lastStep.transitions[0].ticket).repo == a.repo,
+        or {
+          lastStep.label == "ticket-done",
+          lastStep.label == "rework-started gate_failure",
+          lastStep.label == "ticket-escalated gate_budget_exhausted",
+          lastStep.label == "ticket-escalated gas_exhausted"
+        },
+        (lastStep.label != "ticket-done") implies a.branchMoved
+      }
+  }
+
+  /// QUIET REPO LANDS CLEANLY (the gate's other half), stated in its
+  /// STRONGEST CHECKABLE FORM — and honestly about what that form is.
+  /// "Quiet" is a PER-ATTEMPT environment choice, not stored repo state
+  /// (the envActive standing rule forbids the flag), so "repo R is quiet"
+  /// is not a predicate over any reachable state and the naive reading
+  /// ("a quiet repo's tickets never gate-fail") cannot be a state
+  /// theorem AS QUANTIFIED OVER REPOS. What IS a state theorem — checked
+  /// here on every reachable step — is the per-attempt form: an attempt
+  /// the environment chose QUIET resolves as the ticket-done success,
+  /// full stop (state-wise a corollary of landingIsolation's
+  /// failure-implies-moved conjunct, stated named like revokedNeverLands
+  /// because it is the gate's claim in its own words). The TRACE-level
+  /// reading — pin every draw for a repo quiet and its tickets all land
+  /// cleanly / pin a move and the rework is attributed — is deliberately
+  /// discharged as deterministic witness traces, not an invariant:
+  /// tests/chuggy_witness_test.qnt quietLandDeterministicTest (the choice
+  /// pinned quiet, the landing succeeds) and movedReworkAttributedTest
+  /// (the choice pinned moved, the gate rework and the wall both carry
+  /// the attribution).
+  val quietRepoLandsCleanly: bool = match lastStep.landing {
+    | LONone => true
+    | LOAttempt(a) => not(a.branchMoved) implies lastStep.label == "ticket-done"
+  }
+
+  /// Every live ticket targets a repo inside the bounded universe — the
+  /// arrival-refusal claim made durable (the programsWellFormed shape):
+  /// repos enter only through decideArrive, whose callers draw from
+  /// `repos`, and are never rewritten.
+  val reposWellFormed: bool = liveTickets.forall(j =>
+    repos.contains(tickets.get(j).repo))
 
   /// The two absorbing terminals never transition OUT (table lines 45-46:
   /// `(Done | Revoked, Revoked) => false` — first-match-wins over the
@@ -1574,6 +1792,9 @@ module chuggy_domain {
   val allInvariants: bool = and {
     landingExclusive,
     revokedNeverLands,
+    landingIsolation,
+    quietRepoLandsCleanly,
+    reposWellFormed,
     terminalsAbsorbing,
     deskConsistent,
     gateWallNamed,

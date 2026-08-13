@@ -74,10 +74,17 @@ itf-golden:
 # CITATIONS ENABLED (N_REGIONS = 2: nondet footprints on completions,
 # scoped rework respawns, citationsWellFormed in allInvariants). The
 # witness-hardening PR adds the DETERMINISTIC witness layer (check.sh
-# Stage 9b-DET): four seed-free machine traces, one per witnessed shape
+# Stage 9b-DET): seed-free machine traces, one module per witnessed shape
 # (free-retry climb, cascade park, stage advance, carry), each asserting
 # allInvariants at every step — these subsumed the two pinned
-# allInvariants runs that used to sit at the end of this recipe.
+# allInvariants runs that used to sit at the end of this recipe. The
+# multi-repo PR (roadmap PR 4; gate: isolation invariants) rides them
+# all with REPOS ENABLED (N_REPOS = 2: arrivals draw the authored target
+# repo; landing attempts draw the environment's branchMoved choice, with
+# LandFailed drawable only on a moved branch; allInvariants gained
+# landingIsolation/quietRepoLandsCleanly/reposWellFormed) and adds the
+# fifth deterministic witness module (quiet-clean landing, moved rework +
+# wall attributed, cross-repo dep unblock).
 # This is check.sh Stage 9 + 9b-DET minus 9b-RND, the DEMOTED random
 # pinned-seed probes (warn-only trace-space health, bash logic) — run
 # `just check` for the full gate.
@@ -92,6 +99,7 @@ chuggy:
     npx quint test --main=chuggy_witness_cascade_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_stage_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint test --main=chuggy_witness_carry_test specs/chuggy/tests/chuggy_witness_test.qnt
+    npx quint test --main=chuggy_witness_multirepo_test specs/chuggy/tests/chuggy_witness_test.qnt
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40

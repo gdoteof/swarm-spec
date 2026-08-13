@@ -476,7 +476,7 @@ module chug_machine {
 
   /// FALSE on mc_livelock (expected-fail) — the finite refutation witness of
   /// the documented budget-free gate loop (chuggernaut docs/spec.md §3.3
-  /// "Bounding", line ~1265: "repeated gate failures don't consume
+  /// "Bounding", line ~1269: "repeated gate failures don't consume
   /// rework_budget"). If gate reworks were metered by ANY of the model's
   /// budgets, gateReworks could never exceed WORK_RETRIES + REWORK_BUDGET;
   /// the violating trace is one job looping Work -> Evaluation -> WrapUp ->

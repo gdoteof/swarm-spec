@@ -94,7 +94,7 @@ module chug_decide {
   /// The landing resolved (spec §3.3 merge gate + squash). Clean → Done.
   /// Conflict/gate failure → WrapUp→Work rework: `gateReworks` counts it but
   /// `rework_budget` is deliberately NOT consumed (spec.md §3.3 "Bounding",
-  /// line 1265) — an integration failure is not the author's product failure.
+  /// line 1269) — an integration failure is not the author's product failure.
   /// That unbudgeted loop is the documented livelock; deadline gas is its
   /// only backstop, so at 0 gas the job escalates instead.
   pure def decideLand(c: Core, j: int, out: LandOutcome): Decision =

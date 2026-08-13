@@ -417,7 +417,7 @@ reproduces seeds bit-for-bit). The two pinned candidates:
 | candidate | run | targets |
 | --------- | --- | ------- |
 | `candidate_clean_lifecycle.yaml` | `mc_small`, seed `0x37a1792d8159488`, expected-fail of `not(witnessAllDone and witnessBlockedUnblocks)`, depth 14 | near-minimal full-graph happy path: 3 jobs land, one after a `Blocked→Ready` unblock; also exercises the skip policy (a mid-trace `quiesce`) |
-| `candidate_gate_rework_loop.yaml` | `mc_livelock`, seed `0xa5110d572bfbd1d5` (check Stage 6a's own seed), expected-fail of `gateReworksWithinBudgets`, depth 40 | the documented spec.md:1265 budget-free gate loop: 3 `merge_gate_failure` reworks of one job, `rework_budget` untouched — **no hand-written golden fixture covers this path** |
+| `candidate_gate_rework_loop.yaml` | `mc_livelock`, seed `0xa5110d572bfbd1d5` (check Stage 6a's own seed), expected-fail of `gateReworksWithinBudgets`, depth 40 | the documented spec.md:1269 budget-free gate loop: 3 `merge_gate_failure` reworks of one job, `rework_budget` untouched — **no hand-written golden fixture covers this path** |
 
 What generation buys beyond replay: candidates for the decision paths **no
 golden fixture covers today** (§2.1: same-cycle `work-retry`,

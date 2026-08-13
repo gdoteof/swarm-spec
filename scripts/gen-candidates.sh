@@ -42,7 +42,7 @@ python3 scripts/itf-to-golden.py "$outdir/candidate_clean_lifecycle.itf.json" \
 # --- candidate 2: the budget-free gate-rework loop ------------------------
 # mc_livelock (DEADLINE=1000 ~ no job_deadline set; WORK_RETRIES=1,
 # REWORK_BUDGET=1) at check.sh Stage 6a's pinned seed: the documented
-# spec.md:1265 livelock — one job takes 3 merge_gate_failure reworks
+# spec.md:1269 livelock — one job takes 3 merge_gate_failure reworks
 # (> every budget combined) with rework_budget untouched. No golden fixture
 # exhibits this; it is exactly what the generation direction exists to hand
 # upstream.
@@ -58,7 +58,7 @@ fi
 python3 scripts/itf-to-golden.py "$outdir/candidate_gate_rework_loop.itf.json" \
   --out "$outdir/candidate_gate_rework_loop.yaml" --roundtrip \
   --note "Scenario: the budget-free merge-gate rework loop (chuggernaut docs/spec.md par. 3.3" \
-  --note "\"Bounding\", line ~1265): job 1 cycles Work->Evaluation->WrapUp->Work on" \
+  --note "\"Bounding\", line ~1269): job 1 cycles Work->Evaluation->WrapUp->Work on" \
   --note "merge_gate_failure THREE times — more than WORK_RETRIES + REWORK_BUDGET = 2 combined —" \
   --note "with rework_budget untouched (evalReworks stays 1). mc_livelock instance: DEADLINE=1000" \
   --note "models a graph with no job_deadline set, so nothing bounds the loop. No hand-written" \

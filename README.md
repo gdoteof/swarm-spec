@@ -29,6 +29,13 @@ references (paths relative to the chuggernaut repo root):
 - `crates/dispatcher/src/invariants.rs` — the executable data invariants the
   dispatcher checks after every message; later PRs model these.
 - `docs/spec.md` §2.1 (state machine), §3.3 (staged evaluation, merge gate).
+- `docs/reference/lifecycle-model.md` — the same machine stated language-neutrally
+  for a reimplementer: states, the event alphabet, the transition table, the
+  Effect vocabulary, the invariants, the authority split and the port boundary.
+  The closest prose analogue to this model, and where a disagreement between
+  `docs/spec.md` and `crates/` gets adjudicated — its two open `### Finding:`
+  sections are holes upstream has not closed, not settled model. One of them
+  (`Draft`→`Draft`) bears directly on `specs/chuggernaut/table.qnt`.
 
 ## Toolchain
 
@@ -60,7 +67,7 @@ check.
 ## The headline theorem
 
 Chuggernaut's spec openly carries a potential livelock. docs/spec.md §3.3
-"Bounding" (line 1265):
+"Bounding" (line 1269):
 
 > repeated gate failures don't consume `rework_budget`, so a job that
 > genuinely can't integrate could loop Work → Evaluation → WrapUp (gate) →
@@ -115,7 +122,7 @@ safety, per the tables in machine.qnt:
 
 | Claim | Encoding | Result | Coverage |
 | --- | --- | --- | --- |
-| gate loop exceeds all budgets (spec.md:1265) | `gateReworksWithinBudgets` on `mc_livelock` | violated (expected) | deterministic seeded trace, 3 unbudgeted gate reworks |
+| gate loop exceeds all budgets (spec.md:1269) | `gateReworksWithinBudgets` on `mc_livelock` | violated (expected) | deterministic seeded trace, 3 unbudgeted gate reworks |
 | the wedge (naive quiescent termination is false) | `wedgeFree` on `mc_liveness` | violated (expected) | deterministic seeded trace |
 | quiescent termination (`quiescentlySettles`) | well-founded descent: `quiescentDescent` = measure ≥ 0 ∧ every non-exempt step strictly decreases it | holds | Apalache exhaustive to depth 4 (Stage 6) / depth 6 (`just verify-liveness`) on `mc_liveness`; 20k random traces to depth 40 on both instances |
 | gas bounds the gate loop | `gateReworksWithinBudgets` on `mc_liveness` (DEADLINE=2) + PR3 `gateReworksBoundedByGas` | holds | same bounds as above / PR3 Stage 5 |

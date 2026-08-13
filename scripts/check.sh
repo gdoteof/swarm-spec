@@ -105,7 +105,7 @@ echo "=== Stage 6: liveness (quiescent termination + documented-livelock reprodu
 #     wedge configurations (the expected-FAIL runs below).
 
 # 6a — THE headline expected-fail. chuggernaut docs/spec.md §3.3 "Bounding"
-# (line ~1265): repeated gate failures don't consume rework_budget, so a job
+# (line ~1269): repeated gate failures don't consume rework_budget, so a job
 # that genuinely can't integrate loops Work -> Evaluation -> WrapUp (gate)
 # -> Work; job_deadline is the only backstop. On mc_livelock (DEADLINE=1000
 # ~ no deadline set) this run MUST find a trace where one job takes that
@@ -131,7 +131,7 @@ if [ "$loop_hits" -lt 3 ]; then
   exit 1
 fi
 echo "Livelock reproduced: $loop_hits unbudgeted 'merge_gate_failure' gate reworks of one job"
-echo "(> WORK_RETRIES + REWORK_BUDGET = 2) — spec.md:1265 as a machine-checked trace."
+echo "(> WORK_RETRIES + REWORK_BUDGET = 2) — spec.md:1269 as a machine-checked trace."
 
 # 6b — expected-fail: the wedge. terminationUnderQuiescence (eventually
 # settled, over bare allSettled) is FALSE: after an escalation, quiescing

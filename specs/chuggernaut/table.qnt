@@ -14,6 +14,18 @@
 ///
 /// Note: the second parameter is `to_` because `to` is a Quint builtin
 /// (the integer range operator `i.to(j)`) and cannot be shadowed.
+///
+/// `Draft`→`Draft` is an ACKNOWLEDGED disagreement upstream, and this file
+/// takes state.rs's side. Chuggernaut's `docs/reference/lifecycle-model.md`
+/// §3 ("Finding: §2.1 and `crates/domain/src/state.rs` agree on every edge but
+/// one") records that spec §2.1 carries two `Draft`→`Draft` rows — the PATCH
+/// full-field replace and the Draft-batch member edit — that `assert_transition`
+/// rejects. It is unreachable rather than broken: both edit paths persist with
+/// `jobs.put` and never enter the state funnel. §2.1 uses a self-row for
+/// "request accepted, state unchanged"; state.rs enumerates only edges that
+/// reach the funnel. Which side is wrong is an open platform decision, so this
+/// transcription follows the code, not the table, and `allowedTransition(Draft,
+/// Draft)` is false. The pre-release lifecycle is v4 work in any case.
 module chug_table {
   import chug_types.* from "./types"
 

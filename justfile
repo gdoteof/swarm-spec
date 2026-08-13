@@ -62,16 +62,19 @@ conformance:
 itf-golden:
     bash scripts/gen-candidates.sh
 
-# Chuggy-model PRs 1-3 (docs/chuggy-charter.md; specs/chuggy/): typecheck +
-# unit tests + invariant simulation on all three instances (both GatePricing
-# branches + RetryFree). PR 2's authoring lifecycle rides the same runs
-# (empty fleet, jobs arrive as Drafts, revoke-cascade gate invariants);
-# PR 3's task-records depth rides them again with PROGRAMS ENABLED
-# (MAX_STAGES = 2: nondet authored eval programs, retained task records,
-# recordWellFormed/recordMonotone/programsWellFormed in allInvariants).
-# This is check.sh Stage 9 minus its three expected-violation witnesses
-# (free-retry climb, cascade park, stage advance), which need bash logic —
-# run `just check` for the full gate.
+# Chuggy-model PRs 1-3 + notes + citations (docs/chuggy-charter.md;
+# specs/chuggy/): typecheck + unit tests + invariant simulation on all three
+# instances (both GatePricing branches + RetryFree). PR 2's authoring
+# lifecycle rides the same runs (empty fleet, jobs arrive as Drafts,
+# revoke-cascade gate invariants); PR 3's task-records depth rides them
+# again with PROGRAMS ENABLED (MAX_STAGES = 2: nondet authored eval
+# programs, retained task records, recordWellFormed/recordMonotone/
+# programsWellFormed in allInvariants); the citations PR rides them with
+# CITATIONS ENABLED (N_REGIONS = 2: nondet footprints on completions,
+# scoped rework respawns, citationsWellFormed in allInvariants).
+# This is check.sh Stage 9 minus its four expected-violation witnesses
+# (free-retry climb, cascade park, stage advance, carry), which need bash
+# logic — run `just check` for the full gate.
 chuggy:
     npx quint typecheck specs/chuggy/measure.qnt
     npx quint typecheck specs/chuggy/domain.qnt
@@ -81,6 +84,9 @@ chuggy:
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_deadline_only --invariant=allInvariants --max-samples=2000 --max-steps=40
     npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=2000 --max-steps=40
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree --invariant=allInvariants --max-samples=50000 --max-steps=40 --seed=0xcfadb0ec5ca34c85 --backend=rust
+    npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations --invariant=allInvariants --max-samples=20000 --max-steps=40 --seed=0xd21f881a768a43bc --backend=rust
 
 # Full check pipeline (what CI runs), Stages 1-9.
 check:

@@ -1,4 +1,4 @@
-# specs/chuggy — the chuggy-model (PRs 1–3 + the notes reconciliation)
+# specs/chuggy — the chuggy-model (PRs 1–3 + the notes reconciliation + citations)
 
 The fresh Quint model for **chuggy**, written *before* the system it
 specifies. Requirements and provenance: [docs/chuggy-charter.md](../../docs/chuggy-charter.md).
@@ -6,7 +6,8 @@ The v1-review notes from geoff and davemo88 and their authoritative
 disposition live in [docs/chuggy-notes-triage.md](../../docs/chuggy-notes-triage.md);
 that triage's "changed now" table IS the **notes-reconciliation PR**, which
 reshaped everything below after PRs 1–3 merged (each change summarized in
-its own section here). The direction of authority is reversed from v1
+its own section here), and its "recorded for a later PR" citations row is
+the **citations PR** (its own section below). The direction of authority is reversed from v1
 (`specs/chuggernaut/`, which chased an existing implementation): **this
 model emits the golden traces; `chuggy`'s CI replays them** — the
 implementation grows up against the model, never the other way around
@@ -17,16 +18,17 @@ traces ship from here as versioned artifacts.
 
 | File | Module | What it is |
 |---|---|---|
-| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-job well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome)` sum. The machine was designed to fit this file. |
-| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the job record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). |
-| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. |
-| `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level. |
+| `measure.qnt` | `chuggy_measure` | **Written first** (standing rule 1 — and reworked first again in the notes-reconciliation PR, before the domain surgery). The per-job well-founded termination measure — lexicographic over the bounded accounts (**gas**, gate budget when `Budgeted`, the rework account granted by `ReworkPolicy`, then within-cycle progress) — plus the record vocabulary it is a pure function of, the descent table, and the named non-descending sets (STUTTER, CHURN, AUTHORING). The micro digit is three sub-digits (PR 3): **phase rank, then `stagesLeft`, then running-task count**, with the digit-order argument in the header. The notes PR compressed the rank ladder (Frozen removed: Draft 5 sits directly above Pending 4; Stalled merged: the settled tier is Done/Escalated/Revoked) and audited every numeral: the ranks are a **named successor ladder** (`rankSettled`…`rankDraft`, `rankCeiling`), every weight is derived through one named `radix(d) = d + 1`, and `microBound = radix(rankCeiling) · rankWeight` — the old literal multiplier 7 became a derivation and fell to 6 with the ceiling. Task lifecycle is the explicit `TaskState = TSRunning \| TSResolved(TaskOutcome) \| TSCarried` sum (the third state is the citations PR's carried-verdict mark). The citations PR lives here as **vocabulary, not digits**: `Task.cited` (the resolution's citation footprint), `taskPassed`/`combine` reading carried verdicts as passes, and the derived scoping plumbing (`lastEvalIndex`, `changeSince`, `spawnEvalScoped`) — the measure function itself is untouched, and the header's descent-table rows carry the re-derivation showing a scoped spawn only tightens the existing dominance bounds. The machine was designed to fit this file. |
+| `domain.qnt` | `chuggy_domain` | The core machine both §4 fork shapes share: pure deciders (`decide*`) over observed `Core` state, the state/actions layer, and the invariants (which must live inside the var-declaring module — Quint 0.32). PR 3: **the eval program is data on the job record** and **`decideEvalStageReduce` is the interpreter** — advance on a passing non-final stage (`eval-stage-passed`, an `Evaluating → Evaluating` transition), land on the final stage, short-circuit into the unchanged rework/escalation economy on a failing stage. Notes PR: **one authoring phase** (release is `Draft → Pending`, the deliberate table deviation recorded at `decideRelease`), **one parked phase** (`PEscalated`; the revalidation park and the revoke cascade's wall land there, distinguished by `reason`), **one operator-resume decider** (`decideOpRetry`, four flavors — the pre-work `RPending` flavor is the old stalled-retry, still free, still CHURN), and the **agentic dispatcher documented as such** (the `dispatch` nondet pick IS the dispatcher's decision — see `decideDispatch`). Citations PR: task completions carry a nondet **citation footprint** (`decideTaskDone` grew a `cited` argument; universe `1..N_REGIONS`), and the interpreter's two eval-entry sites spawn **scoped** — retained passing verdicts whose footprints are disjoint from the cycle's change (derived from the record's work entries) are **carried**, visible as `TSCarried` record entries and the `CarryEvalVerdicts` effect; invariant `citationsWellFormed`, witness `carryNever`. |
+| `mc/mc_chuggy.qnt` | `mc_chuggy_budgeted`, `mc_chuggy_deadline_only`, `mc_chuggy_retryfree` | Small-scope instances: one per `GatePricing` branch (charter §2: parameterize and decide on evidence) plus a `RetryFree` instance that keeps the operator-churn exemption in `stepDescends` exercised; invariants wired for `--invariant=allInvariants`. All three run **with programs enabled** (`MAX_STAGES = 2`: arrivals draw nondet from all 20 well-formed programs at these bounds) **and citations enabled** (`N_REGIONS = 2`: every completion draws a footprint from the 4 subsets of `{1, 2}` — the smallest universe where a carry is reachable) and instantiate `REWORK_POLICY = RWBudget(n)` and `GAS`. |
+| `tests/chuggy_test.qnt` | `chuggy_test` | Pure unit tests over deciders + measure: strict descent on every transition the descent table claims, stutter/churn classification pinned, effect-exclusivity on happy + duplicate paths, every wall's name, both gate prices, both retry meterings, init's rejection of gasless graphs, the authoring/revoke/cascade suite (revoke covers every live phase and all **three desk-reason flavors** of the one parked phase), the full PR 3 staged-program suite — and the notes-PR pins: the pre-work park/resume classified (free at zero gas under both meterings, climbs, CHURN), the cascade wall pinned resume-less, program-as-data at machine level — and the citations suite: degeneration pinned byte-for-byte, the carry walked both arms (outcome = combinator over carried ∪ respawned), every conservative default pinned (silent evaluator, silent work attempt, failing evaluator, first-time entries), the all-carried staged walk, and revoke retaining the carry mark. |
 
 Checked by `scripts/check.sh` Stage 9 (typecheck + unit tests + invariant
-simulation on all three instances + **three** expected-violation witnesses:
-the free-pipeline-resume climb, PR 2's cascade-reachability probe, and PR
-3's stage-advance-reachability probe — seed forensics for the notes PR
-recorded at each probe) and `just chuggy`.
+simulation on all three instances + **four** expected-violation witnesses:
+the free-pipeline-resume climb, PR 2's cascade-reachability probe, PR 3's
+stage-advance-reachability probe, and the citations PR's carry-reachability
+probe — seed forensics for the notes PR and the citations PR recorded at
+each probe) and `just chuggy`.
 
 ## The notes-reconciliation PR — what each note changed here
 
@@ -42,6 +44,80 @@ Every row of the triage's "changed now" table, note quoted, landed as:
 | "what is job deadline exceeded" / "what is deadline left" | The gas rename: const `GAS`, field `gasLeft`, wall `gas_exhausted`, reason `RsGasExhausted`. The charter's §2 economy/deadline row is **unchanged in force** — init still admits no state for a gasless graph; only the wall-clock-implying name died. Chuggernaut knob mapping: **`job_deadline` → gas** (chuggernaut's per-job deadline count is exactly this account under its old name; `GatePricing`'s `DeadlineOnly` branch keeps its charter name and means gas-only). |
 | "termMeasure also has magic number 4 in it" | The measure audit (measure.qnt): ranks are a named successor ladder, `rankCeiling` names the top, `radix(d) = d + 1` is the one derivation every weight and account radix is built from, `firstTaskId` names the 1-indexing — no bare rank, multiplier, or radix literal is written twice, and each derivation sits next to its definition. |
 | "molting leaving compaction sentinels from old docs/designs/plans" | This sweep: stale references to the superseded designs (the `EVAL_COMBINATOR` const, Frozen/Stalled as live vocabulary, the pre-PR 3 `rankWeight` arithmetic in prose) are gone from specs/chuggy; what remains of them is provenance — deviation notes and this table. |
+
+## The citations PR — scoped eval rework
+
+The triage's "recorded for a later PR" row, note verbatim:
+
+> "allow passing evaluators to cite code they care about to let them
+> decide whether to rerun if evaluation must rerun"
+
+"Let them decide" is modeled as: the evaluator *expresses* its rerun-decision as the citation it publishes at resolution, and the interpreter *applies* that rule mechanically — the decision is the footprint.
+
+**The abstraction.** Real citations are code regions; the model abstracts
+both sides to opaque region sets over a bounded universe `1..N_REGIONS`.
+An evaluator task's **resolution** carries a nondet citation footprint
+(what it says it cares about), a work task's resolution carries the
+attempt's **touch set** (the change side of the same abstraction) — both
+ride the resolved record entry (`Task.cited`), environment-chosen exactly
+like the verdict, never stored machine state: a cycle's change footprint
+is **derived** from the retained record's work entries (`changeSince`;
+work groups already delimit cycles — standing rule 3 twice over).
+
+**The scoping rule.** At the interpreter's two eval-entry sites — the
+work-passed lowest-stage entry and the stage advance — the spawn is
+scoped (`spawnEvalScoped`): a position whose most recent retired
+incarnation **passed**, citing a **nonempty** footprint **disjoint** from
+everything the work attempts since that incarnation touched, is born
+`TSCarried` (verdict carried over, evaluator not rerun, citation
+inherited — which is what keeps carries sound when they **chain** across
+cycles); every other position respawns running. The stage's outcome is
+the combinator over carried ∪ respawned in one task set — verdict
+soundness by construction, and carried verdicts are always passes, so
+short-circuit semantics are unchanged. The rule keys on the **record**,
+not on why the cycle started (cycle provenance is not stored), so eval
+reworks, gate reworks, and post-`work_failed` respawn cycles all scope
+the same way; operator resumes stay full fan-outs (chuggernaut's own
+extracted `Retry` vocabulary: *"a fresh eval fan-out"*).
+
+**Conservative defaults**, each pinned in tests:
+
+- **Silence is not a free pass, evaluator side**: a passer that cited
+  nothing reruns — the empty set is disjoint from everything, which is
+  exactly why the empty-footprint arm is load-bearing.
+- **Silence is not a free pass, work side**: a work resolution that cited
+  nothing is treated as touching everything — nothing carries past it.
+- **Work tasks always respawn** (only evaluators cite; structural — the
+  work spawn sites never scope).
+- **The failing evaluator that caused the rework always respawns**: a
+  carry requires a retained *pass*, so its own citation buys it nothing.
+- **First-time stage entry runs everything** — including every stage a
+  short-circuit skipped: *"skipped, not failed, so no task records exist
+  for them"*, hence nothing to carry from, structurally (the PR 3
+  skipped-stage rule stands; scoping never resurrects a skipped stage).
+
+**Degeneration** (the compatibility story, same move as PR 3's
+single-stage program): under the full-intersection adversary — the change
+touches every region, or any work resolution is silent — no position
+carries and the machine is the recompute-all machine **byte for byte**
+(same labels, transitions, `["SpawnEvalTasks"]` effects, task sets,
+records), pinned in `citeDegenerationByteForByteTest`.
+
+**Trace vocabulary.** A carry is visible twice over, because the
+implementation will need to replay it: the record entry mark (`TSCarried`
+with the inherited citation, never confusable with a re-earned pass) and
+the `CarryEvalVerdicts` effect beside `SpawnEvalTasks` (either may appear
+alone — an all-carried re-entry spawns nothing running, records
+`["CarryEvalVerdicts"]`, and is immediately reducible).
+
+**Deliberately NOT modeled**: real diffs and region granularity (the
+nondet footprints over-approximate every concrete diff discipline);
+evaluator **honesty** about footprints — an evaluator that under-cites
+gets stale verdicts carried, and whether/when to trust a claimed
+footprint (require it, audit it, ignore it for security-critical
+evaluators) is an implementation/policy concern worth an intake question,
+flagged for the `eval/vocabulary` confirmation rather than silently
+decided here.
 
 ## The PR 3 eval vocabulary — extracted, standing in
 
@@ -83,7 +159,7 @@ short-circuit → the same decider's failure arm routing into the **existing**
 rework/escalation economy; the chronological task log → `Job.record` with
 history-unique sequential ids; revoke's force-close → `TCancelled`.
 
-## What the model claims (PRs 1–3 + notes)
+## What the model claims (PRs 1–3 + notes + citations)
 
 - **Effect-only exclusivity** (charter §2): any number of task executions
   may run and duplicate — the fabric is at-least-once, `no-double-pods` was
@@ -111,6 +187,19 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
   from the lowest stage), or the existing walls when an account is empty.
   An evaluator crash is a `TFailed` inside the stage — **the job pays**,
   one account, no new machinery, no new wall.
+- **Rework respawn is citation-scoped** (the citations PR): evaluators
+  cite abstract footprints on their resolutions, and a rework's eval
+  re-entry **carries** retained passing verdicts whose footprints are
+  disjoint from what the cycle's work attempts touched — fewer tasks
+  spawn, never more; the outcome is the combinator over carried ∪
+  respawned; every conservative default (silence reruns, work always
+  respawns, the failer always respawns, first-time runs everything) is
+  pinned, and the full-intersection adversary degenerates **byte for
+  byte** to recompute-all. Carries are trace-visible (`TSCarried` record
+  entries, `CarryEvalVerdicts` effect) and machine-reachable (the
+  `carryNever` witness). No new digit, no new stored state:
+  `citationsWellFormed` extends the record invariants without weakening
+  `idsAccounted`/`recordMonotone`.
 - **Task records are first-class and retained** (charter §2 job anatomy):
   every task carries identity (sequential within the job, never reused),
   kind (work vs evaluator-stage), and its **explicit lifecycle state**
@@ -176,6 +265,7 @@ history-unique sequential ids; revoke's force-close → `TCancelled`.
 | **Staged merge gate** (chuggernaut spec.md §3.3 Merge Gate item 3: gate stages, failure classification, the gate-fix fast path) | **PR 5**, with the gate itself — chuggy's landing stays one abstract outcome until `landing/requirements` is answered. |
 | **Per-task budgets / attempt counters** (chuggernaut §1.2 `work_retries`, `eval_retries`, `attempt`) | **Never** — retry machinery below the cycle, a charter §2 non-goal; container relaunches are the trusted `backoffLimit` fabric axiom. Tasks carry identity + kind + lifecycle state, no attempt digit (measure.qnt header re-affirms). |
 | **Required vs advisory evaluators** (`required: false` never blocks, §3.3) | Below the model's grain, absorbed into the per-stage **combinator**: an advisory evaluator is one the stage's combinator ignores. Becomes vocabulary only if the intake answer demands per-task requiredness. |
+| **Real diffs, region granularity, footprint honesty** (citations PR) | **Never, by design**: citations are nondet region sets over `1..N_REGIONS` — an over-approximation of every concrete diff/citation discipline. Whether an evaluator's claimed footprint is **trusted** (required, audited, ignored) is implementation/policy, flagged as an intake `eval/vocabulary` question. Scoping the operator resume's fresh fan-out is a possible later refinement, gated on the same answer. |
 | **Abort verdict** (`abort: true` skips remaining rework budget, §1.2/§3.3) and **infra-fail escalates immediately** (§3.3 reduce) | Folded into `TFailed`-fails-the-stage: the charter's evaluator-crash row prices all of it identically (**the job pays**, one account). The chuggernaut distinction is real, though — **flagged as a question for the intake `eval/vocabulary` confirmation**, not silently adopted or silently dropped. |
 | **The approval gate** (a synthesized required Human evaluator at `max(stage)+1`, §3.3) | Not synthesized by the model: it is *expressible* as data (a final stage); synthesizing it at resolution time is an authoring/implementation concern. |
 | Dep re-authoring (editing a doomed job's deps out of a revoked chain) | Not scheduled; the `dependency_revoked` wall's only modeled exit is revoke (the documented table-line-44 deviation at `retryableIn`). |

@@ -36,6 +36,29 @@
 ///     init still admits no gasless graph; only the wall-clock-implying
 ///     name died.
 ///
+/// THE CITATIONS PR (docs/chuggy-notes-triage.md, "recorded for a later
+/// PR": "allow passing evaluators to cite code they care about to let
+/// them decide whether to rerun if evaluation must rerun") touches NO
+/// digit and NO weight — standing rule 1 held a fifth time by PROOF
+/// rather than surgery: the measure needed no rework, only the argument
+/// that the change can only shrink what the digits already dominate.
+/// What changed is record VOCABULARY, which lives in this file: a task's
+/// RESOLUTION carries an abstract citation footprint (`cited` on Task —
+/// for an evaluator, the regions it says it cares about; for a work
+/// task, what the attempt touched: the change side of the same
+/// abstraction), and a scoped eval re-entry (spawnEvalScoped below) may
+/// CARRY a still-valid passing verdict as a born-settled TSCarried task
+/// instead of re-earning it. A carried task is not TSRunning, so scoping
+/// only ever SHRINKS the runningCount digit at the two spawn sites whose
+/// climbs the chain already dominates (work-passed, eval-stage-passed —
+/// both dominance bounds below are stated over the fan-out CEILING, so a
+/// smaller spawn needs no new argument; the re-derivation is annotated
+/// at both descent-table rows). Footprints are environment/adversary
+/// choices riding the resolved record entry, exactly like verdicts —
+/// never stored machine state (the change footprint of a cycle is
+/// DERIVED from the retained record's work entries, standing rule 3);
+/// the measure reads none of it.
+///
 /// The measure is LEXICOGRAPHIC over the bounded accounts, most significant
 /// first, flattened into one nonnegative integer by radix weighting (every
 /// digit is bounded by its radix, so the integer order IS the lexicographic
@@ -161,11 +184,20 @@
 ///   work-passed                         rank 3->2 (dominates the stage
 ///                                       digit appearing at L <= maxStages
 ///                                       AND the stage-0 fan-out spawn —
-///                                       the rankWeight bound above)
+///                                       the rankWeight bound above.
+///                                       Citations PR: a scoped re-entry
+///                                       spawns r <= fanout RUNNING tasks
+///                                       — carried tasks are born settled
+///                                       — so the climb is r <= nTasks,
+///                                       within the same bound: fewer
+///                                       spawns only tighten it)
 ///   eval-stage-passed (PR 3 —           stagesLeft -1 (dominates the next
 ///     a non-final stage passes;           stage's fan-out spawn:
-///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1)
-///     chuggernaut spec.md §2.1 line 832)
+///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1;
+///     chuggernaut spec.md §2.1 line 832)  citations PR: a scoped advance
+///                                         spawns r <= fanout running, so
+///                                         -stageWeight + r <= -1 a
+///                                         fortiori)
 ///   job-escalated work_failed           rank 3->0 (cycle-level resolution:
 ///                                       the fabric already retried below
 ///                                       the cycle via trusted backoffLimit)
@@ -275,7 +307,8 @@ module chuggy_measure {
   // (GatePricing) and RetryCharged/RetryFree (RetryPricing) — documented
   // here because they live in the same module-wide constructor namespace.
   // PR 3 added TK (TaskKind); the notes PR adds TS (TaskState — the
-  // explicit task lifecycle) and RW (ReworkPolicy).
+  // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
+  // one TS constructor (TSCarried) and no new prefix.
 
   /// STORED job phases. Deliberately few (charter standing rule 3, derive
   /// don't store): Blocked and Ready are PREDICATES over deps + record in
@@ -357,7 +390,24 @@ module chuggy_measure {
   /// old TRunning-in-TaskOutcome only implied: a running task CANNOT carry
   /// an outcome, and a resolved task MUST. First write wins (resolveTask);
   /// resolution is final (recordMonotone makes that a theorem).
-  type TaskState = TSRunning | TSResolved(TaskOutcome)
+  ///
+  /// TSCarried (citations PR): the THIRD state — a verdict CARRIED OVER
+  /// from this evaluator position's most recent retired incarnation
+  /// instead of re-earned. Born settled at a scoped eval re-entry
+  /// (spawnEvalScoped: the previous resolution PASSED, cited a nonempty
+  /// footprint, and that footprint is disjoint from the cycle's change),
+  /// never runs, receives no completion events (decideTaskDone finds no
+  /// running match — a delivery naming a carried id absorbs as the usual
+  /// duplicate), and always stands for a PASS: only passing resolutions
+  /// carry, so the combinator reads it as one (taskPassed below). It
+  /// inherits the citation that earned the carry on `cited` — which is
+  /// what lets a carry CHAIN soundly across cycles (each cycle re-checks
+  /// the same footprint against its own change). This constructor is the
+  /// trace-visible distinguishing mark the implementation replays: a
+  /// carried entry in the retained record is exactly "this evaluator was
+  /// skipped and its old verdict reused", never confusable with a
+  /// re-earned TSResolved(TPassed).
+  type TaskState = TSRunning | TSResolved(TaskOutcome) | TSCarried
 
   /// A first-class task record (charter §2 job anatomy): identity + kind +
   /// lifecycle state. `id` is SEQUENTIAL WITHIN THE JOB, 1-indexed, across
@@ -371,7 +421,24 @@ module chuggy_measure {
   /// `cycle` (derivable from the record's kind sequence — work groups
   /// delimit cycles), timestamps/results (implementation accounting, not
   /// machine state).
-  type Task = { id: int, kind: TaskKind, state: TaskState }
+  ///
+  /// `cited` (citations PR): THE CITATION FOOTPRINT — the abstract region
+  /// set (a subset of the machine's 1..N_REGIONS universe; real citations
+  /// are code regions, abstracted to opaque ids) this task's RESOLUTION
+  /// carried. For an EVALUATOR: the code it says it cares about — what
+  /// lets a later rework skip re-running it. For a WORK task: what the
+  /// attempt touched — the CHANGE side of the same abstraction, which is
+  /// how a cycle's change footprint stays DERIVED from the record
+  /// (changeSince below) instead of stored. Stamped by resolveTask when
+  /// the completion event arrives — the footprint is part of the
+  /// resolution event, environment/adversary-chosen exactly like the
+  /// verdict — and Set() while running. Set() on a RESOLVED task means it
+  /// cited NOTHING, and silence is not a free pass: a silent evaluator is
+  /// treated as citing everything (must rerun), a silent work attempt as
+  /// touching everything (nothing may carry past it) — both conservative
+  /// defaults live in spawnEvalScoped/changeSince. A TSCarried task
+  /// inherits the citation that earned its carry (see TaskState).
+  type Task = { id: int, kind: TaskKind, state: TaskState, cited: Set[int] }
 
   /// A task-completion event's verdict (the event, as distinct from the
   /// stored resolution — duplicates of the event must be tolerated).
@@ -718,7 +785,8 @@ module chuggy_measure {
   /// caller passes nextTaskId so identity stays sequential within the job
   /// across the whole history.
   pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
-    start.to(start + n - 1).map(i => { id: i, kind: k, state: TSRunning })
+    start.to(start + n - 1).map(i =>
+      { id: i, kind: k, state: TSRunning, cited: Set() })
 
   /// The next task id this job would spawn: every id ever issued is either
   /// retired (record) or live (tasks), and ids are dense from firstTaskId.
@@ -735,19 +803,107 @@ module chuggy_measure {
   pure def spawnOn(job: Job, k: TaskKind, n: int): Job =
     { ...job, tasks: spawnTasks(k, nextTaskId(job), n), spawned: job.spawned + n }
 
+  // --- Citation scoping (the citations PR) ---------------------------------
+  // The triage note, verbatim: "allow passing evaluators to cite code they
+  // care about to let them decide whether to rerun if evaluation must
+  // rerun." Both sides are abstracted: an evaluator's citation and a work
+  // attempt's touch set are opaque region sets over 1..N_REGIONS (the
+  // domain's bound), riding the resolved record entries (Task.cited).
+  // Everything below is DERIVED from the retained record — no cycle
+  // bookkeeping, no stored change set (standing rule 3): the record's work
+  // groups already delimit cycles, so "what changed since this evaluator
+  // last ran" is a fold over the record.
+
+  /// The largest record index holding a stage-s eval entry, or -1 when
+  /// stage s has never retired an incarnation (first-time entry). Every
+  /// retirement of a stage-s set is a full contiguous fanout-sized run
+  /// (the live set always carries the stage's declared width —
+  /// tasksWellFormed), so the most recent incarnation occupies exactly
+  /// the fanout indices ending here, position k at index
+  /// (lastEvalIndex - fanout + 1 + k) — entry order is id order is
+  /// position order (spawnTasks issues ids ascending).
+  pure def lastEvalIndex(record: List[Task], s: int): int =
+    record.indices().fold(-1, (acc, i) =>
+      if (record[i].kind == TKEval(s) and i > acc) i else acc)
+
+  /// THE CHANGE FOOTPRINT since record index `after`: the union of what
+  /// every LATER work attempt touched — every attempt, including failed
+  /// and force-closed ones, conservatively: anything that ran between the
+  /// old verdict and now may have touched code. CONSERVATIVE DEFAULT,
+  /// work side: a work entry that cited NOTHING is counted as the whole
+  /// universe — a silent attempt is treated as touching everything, so
+  /// nothing carries past it (the mirror of the evaluator-silence rule in
+  /// spawnEvalScoped; silence is never a free pass in either direction).
+  pure def changeSince(record: List[Task], after: int, universe: Set[int]): Set[int] =
+    record.indices().fold(Set(), (acc, i) =>
+      if (i > after and record[i].kind == TKWork)
+        acc.union(if (record[i].cited == Set()) universe else record[i].cited)
+      else acc)
+
+  /// THE SCOPED EVAL SPAWN (citations PR) — the footprint-aware
+  /// counterpart of spawnOn for the interpreter's two eval-entry sites
+  /// (work-passed's lowest-stage entry and the stage advance). Spawns
+  /// stage s's full fan-out of n tasks at the job's next sequential ids
+  /// (identity accounting is UNCHANGED: n tasks spawn, spawned += n,
+  /// idsAccounted holds verbatim over carried entries), but position k is
+  /// born TSCarried — verdict carried over, evaluator NOT rerun — exactly
+  /// when, in the most recent retired incarnation of stage s:
+  ///   - position k PASSED (taskPassed: an earned pass or a chained
+  ///     carry — a carried entry retains its citation, so re-checking IT
+  ///     against each new cycle's change keeps the chain sound), AND
+  ///   - it cited a NONEMPTY footprint (conservative default, evaluator
+  ///     side: citing nothing = citing everything = must rerun; note the
+  ///     disjointness test alone would pass an empty set, which is
+  ///     precisely why silence needs its own arm), AND
+  ///   - that footprint is DISJOINT from the change footprint since that
+  ///     incarnation (changeSince — every work attempt in between).
+  /// Everything else respawns fresh (TSRunning): failed positions — so
+  /// THE FAILING EVALUATOR THAT CAUSED A REWORK ALWAYS RESPAWNS, it
+  /// cannot satisfy taskPassed — cancelled positions, silent citers, and
+  /// intersecting footprints. A FIRST-TIME stage entry (no retired
+  /// incarnation) spawns everything running — scoping never skips a
+  /// verdict that was never earned. Work fan-outs never come through
+  /// here: WORK TASKS ALWAYS RESPAWN (only evaluators cite; the work
+  /// spawn sites keep spawnOn).
+  ///
+  /// DEGENERATION (the compatibility story): when the change intersects
+  /// everything — the adversary touches all regions, or any work entry is
+  /// silent — no position carries and this IS spawnOn(job, TKEval(s), n),
+  /// byte for byte; pinned in tests/chuggy_test.qnt.
+  pure def spawnEvalScoped(job: Job, s: int, n: int, universe: Set[int]): Job =
+    val iLast = lastEvalIndex(job.record, s)
+    if (iLast == -1) spawnOn(job, TKEval(s), n)
+    else
+      val change = changeSince(job.record, iLast, universe)
+      val start = nextTaskId(job)
+      { ...job,
+        tasks: 0.to(n - 1).map(k =>
+          val prev = job.record[iLast - n + 1 + k]
+          if (taskPassed(prev) and prev.cited != Set() and
+              prev.cited.intersect(change) == Set())
+            { id: start + k, kind: TKEval(s), state: TSCarried, cited: prev.cited }
+          else
+            { id: start + k, kind: TKEval(s), state: TSRunning, cited: Set() }),
+        spawned: job.spawned + n }
+
   /// Retire the live task set into the retained record, in id order
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
   /// appended run keeps record entry i at id firstTaskId + i). A task
   /// still RUNNING at retirement is force-closed as TSResolved(TCancelled)
   /// — only revoke retires mid-flight sets (chuggernaut spec.md §1.2
   /// "Revoke closes tasks"); every reduce/escalation retirement is of a
-  /// fully-resolved set, so the TCancelled arm never fires there.
+  /// fully-resolved set, so the TCancelled arm never fires there. A
+  /// TSCarried task retires AS TSCarried, citation intact (citations PR):
+  /// the mark survives into the log — that is both the replay vocabulary
+  /// and what lets the NEXT cycle's carry check chain off it.
   pure def retireLive(job: Job): Job =
     val start = firstTaskId + job.record.length()
     { ...job,
       tasks: Set(),
       record: range(start, start + job.tasks.size()).foldl(job.record, (r, i) =>
-        r.append(job.tasks.fold({ id: i, kind: TKWork, state: TSResolved(TCancelled) }, (acc, t) =>
+        r.append(job.tasks.fold(
+          { id: i, kind: TKWork, state: TSResolved(TCancelled), cited: Set() },
+          (acc, t) =>
           if (t.id == i)
             { ...t, state: if (t.state == TSRunning) TSResolved(TCancelled) else t.state }
           else acc))) }
@@ -757,20 +913,37 @@ module chuggy_measure {
   /// delivery and changes nothing — the idempotence the dropped
   /// no-double-pods axiom demands (charter §2 fabric row). The explicit
   /// lifecycle makes the finality structural: TSRunning -> TSResolved(out)
-  /// is the only edge, and nothing maps a TSResolved back.
-  pure def resolveTask(tasks: Set[Task], tid: int, out: TaskOutcome): Set[Task] =
+  /// is the only edge, and nothing maps a TSResolved (or TSCarried) back.
+  /// Citations PR: the resolution event carries the footprint alongside
+  /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
+  /// with a different citation changes nothing, and a carried task
+  /// (born settled, no running match) absorbs deliveries the same way.
+  pure def resolveTask(
+      tasks: Set[Task], tid: int, out: TaskOutcome, cited_: Set[int]): Set[Task] =
     tasks.map(t =>
-      if (t.id == tid and t.state == TSRunning) { ...t, state: TSResolved(out) }
+      if (t.id == tid and t.state == TSRunning)
+        { ...t, state: TSResolved(out), cited: cited_ }
       else t)
+
+  /// What counts as a PASS to the combinator (citations PR): a verdict
+  /// earned this incarnation (TSResolved(TPassed)) or one carried over
+  /// from the last (TSCarried — only passing resolutions carry, so the
+  /// reading is faithful, and it is exactly what makes VERDICT SOUNDNESS
+  /// a construction: the combinator runs over carried ∪ respawned in one
+  /// set, so a scoped stage's outcome IS the combinator's outcome over
+  /// the union, never a separate code path).
+  pure def taskPassed(t: Task): bool =
+    t.state == TSResolved(TPassed) or t.state == TSCarried
 
   /// The verdict combinator, interpreted per stage (PR 3: the caller reads
   /// it off the job's program — eval is data, this is the interpreter's
-  /// leaf). Callers guarantee all tasks are resolved. CUnanimousPass is
-  /// chuggernaut's "every required evaluator in the stage passed" (spec.md
-  /// §3.3) at this grain; TFailed and TCancelled both fail it.
+  /// leaf). Callers guarantee all tasks are settled (resolved or carried).
+  /// CUnanimousPass is chuggernaut's "every required evaluator in the
+  /// stage passed" (spec.md §3.3) at this grain; TFailed and TCancelled
+  /// both fail it, TSCarried passes it (taskPassed above).
   pure def combine(c: Combinator, tasks: Set[Task]): bool =
     match c {
-      | CUnanimousPass => tasks.forall(t => t.state == TSResolved(TPassed))
-      | CAnyPass => tasks.exists(t => t.state == TSResolved(TPassed))
+      | CUnanimousPass => tasks.forall(t => taskPassed(t))
+      | CAnyPass => tasks.exists(t => taskPassed(t))
     }
 }

@@ -249,7 +249,7 @@ rm -rf "$gen_tmp"
 echo "Generation round-trip OK: both candidates project loss-free and match docs/examples/."
 
 echo
-echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation (typecheck + unit tests + invariant simulation) ==="
+echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation + citations (typecheck + unit tests + invariant simulation) ==="
 # The model-first successor spec (docs/chuggy-charter.md; specs/chuggy/).
 # PR 1's gate is typecheck + unit tests + randomized invariant simulation on
 # BOTH GatePricing instances (charter §2: the gate-pricing parameter must be
@@ -273,6 +273,15 @@ echo "=== Stage 9: chuggy-model PRs 1-3 + notes-reconciliation (typecheck + unit
 # operator-retry flavor; no stalled-retry action), gas rename, REWORK_POLICY.
 # The shrunk action list changed the simulator's nondet structure, so every
 # 9b seed was re-examined; forensics at each probe.
+# The CITATIONS PR (the triage's "recorded for a later PR" row) rides them
+# all again with CITATIONS ENABLED: every instance sets N_REGIONS = 2, so
+# each task completion draws a nondet citation footprint (4 subsets of
+# {1,2}) and scoped rework respawns — carried verdicts, TSCarried record
+# entries, the CarryEvalVerdicts effect — are reachable; allInvariants
+# gained citationsWellFormed, plus a fourth expected-violation probe in 9b
+# for carry reachability. The extra nondet draw per completion changed the
+# simulator's nondet structure AGAIN, so every 9b seed was re-examined
+# once more; forensics at each probe.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
 # specs/; the explicit typechecks here keep the stage self-contained.
 # Apalache verification is deliberately deferred (see specs/chuggy/README.md).
@@ -292,10 +301,22 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
 # free pipeline-resume climb (the 9b seed below): the 9b witness proves the
 # climb reachable, but only allInvariants ON that trace proves the exemption
 # arm exempts it — a sign-flip there ships green through everything else
-# (found by adversarial review; mutant-verified).
+# (found by adversarial review; mutant-verified). (Seed moves with the 9b
+# probe's — re-pinned by the citations PR, forensics at the probe.)
 npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=allInvariants --max-samples=50000 --max-steps=40 \
-  --seed=0x240a2d65e1e3e305 --backend=rust
+  --seed=0xcfadb0ec5ca34c85 --backend=rust
+# The citations twin of the pin above: allInvariants on a trace KNOWN to
+# contain a CARRY (the 9b carry probe's seed below, mc_chuggy_citations —
+# the mc_livelock-style instance built for the probe): the probe proves the
+# carry reachable, but only allInvariants ON that trace proves the carried
+# spawn satisfies citationsWellFormed/idsAccounted/recordMonotone and that
+# the scoped spawn's smaller climb still descends (measureDescends) where a
+# carry actually happens — the three main instances' random runs hit
+# carries too rarely to guarantee that coverage.
+npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
+  --invariant=allInvariants --max-samples=20000 --max-steps=40 \
+  --seed=0xd21f881a768a43bc --backend=rust
 
 # 9b — anti-vacuity, expected-fail (the Stage 6a pattern: pinned seed, rust
 # backend, grep the verdict — never trust exit codes alone). On the
@@ -313,12 +334,20 @@ npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
 # and the witness was refined to the pipeline-resume shape. PR 3's seed
 # 0x2b196ffb57466d4d was verified GENUINELY DEAD before re-pinning: its
 # full 50k-sample budget ran to completion with no violation ([ok], 32s).
-# The new seed was found unseeded within ~907k samples (~36s, rust
-# backend) and reproduces the violation on its first trace (37ms), with
+# That seed was found unseeded within ~907k samples (~36s, rust
+# backend) and reproduced the violation on its first trace (37ms), with
 # the operator-retry-into-Evaluating signature in the trace.)
+# (Re-pinned AGAIN for the citations PR — the fourth re-pin: taskDone
+# grew a nondet citation draw (4 subsets per completion), shifting every
+# trace after the first completion event. The notes-PR seed
+# 0x240a2d65e1e3e305 was verified GENUINELY DEAD before re-pinning: its
+# full 50k-sample budget ran to completion with no violation ([ok], 31s).
+# The new seed was found unseeded within ~1.8M samples (~2m16s, rust
+# backend) and reproduces the violation on its first trace (141ms), with
+# the operator-retry pipeline-resume signature in the trace.)
 if free_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_retryfree \
   --invariant=freeClimbNever \
-  --max-samples=50000 --max-steps=40 --seed=0x240a2d65e1e3e305 --backend=rust 2>&1); then
+  --max-samples=50000 --max-steps=40 --seed=0xcfadb0ec5ca34c85 --backend=rust 2>&1); then
   echo "FAIL: freeClimbNever unexpectedly HELD on mc_chuggy_retryfree —" >&2
   echo "      the RetryFree churn exemption in stepDescends is unexercised dead code" >&2
   exit 1
@@ -348,7 +377,10 @@ echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt C
 # shape, label, and RsDependencyRevoked signature are unchanged, and the
 # PR 2 seed SURVIVED the re-examination: it still violates within its
 # budget on the reshaped machine (38ms) with both signature greps hit, so
-# it is deliberately NOT re-pinned.)
+# it is deliberately NOT re-pinned.) (Citations-PR forensics: re-examined
+# once more against the citation-draw nondet shift — the seed SURVIVED
+# again: violates within its budget (96ms) with both signature greps hit;
+# deliberately NOT re-pinned.)
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=cascadeParkNever \
   --max-samples=20000 --max-steps=40 --seed=0x5cea1f53f74a0e4e --backend=rust 2>&1); then
@@ -381,7 +413,10 @@ echo "dependency_revoked wall (cascadeSafety is exercised, not vacuous — the P
 # did not exist; probe and seed are PR 3-new, found unseeded within ~25k
 # samples. Notes-PR forensics: the PR 3 seed SURVIVED the re-examination —
 # it still violates within its budget on the reshaped machine (631ms) with
-# the eval-stage-passed signature, so it is deliberately NOT re-pinned.)
+# the eval-stage-passed signature, so it is deliberately NOT re-pinned.
+# Citations-PR forensics: re-examined against the citation-draw nondet
+# shift — SURVIVED again: violates within its budget (~5.1s) with the
+# eval-stage-passed signature; deliberately NOT re-pinned.)
 if stage_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
   --invariant=stageAdvanceNever \
   --max-samples=20000 --max-steps=40 --seed=0x9180927e576bcf85 --backend=rust 2>&1); then
@@ -400,6 +435,47 @@ echo "$stage_out" | grep -q 'eval-stage-passed' || {
 }
 echo "Stage advance reproduced: a reachable multi-stage program passes a non-final"
 echo "stage and spawns the next (the PR 3 interpreter and stage digit are exercised)."
+
+# 9b, fourth probe (citations PR) — carry reachability, expected-fail. The
+# witness carryNever ("no eval spawn ever carries a verdict") MUST be
+# violated on mc_chuggy_citations (the probe instance built for exactly
+# this — see its header: one job, singleton task sets, flat programs,
+# Budgeted(1), the densest honest carry choreography being the GATE-REWORK
+# carry): a reachable CarryEvalVerdicts effect — a retained passing
+# verdict whose citation is disjoint from what the rework's work attempt
+# touched, reused instead of rerun — is the machine-level proof that the
+# scoped respawn actually skips an evaluator on machine traces, so the
+# green invariant runs above (and the pinned allInvariants run on THIS
+# seed) are checked against traces where a carry occurs, not vacuous: an
+# adversary that always cited the full universe (or nothing) never takes
+# the carry branch, and carryNever would hold. The unit tests walk carries
+# deterministically; this pins one as REACHABLE. (Probe and seed are
+# citations-PR-new — no older seed can cover this: the effect did not
+# exist. Found unseeded within ~481k samples (~13s, rust backend) after
+# the shared instances proved too diffuse — carryNever HELD over ~2M
+# unseeded samples on mc_chuggy_budgeted (~2m37s), which is exactly why
+# the probe instance exists (the mc_livelock move). Reproduces the
+# violation on its first trace (41ms) with both the CarryEvalVerdicts
+# effect and a TSCarried live task in the trace.)
+if carry_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_citations \
+  --invariant=carryNever \
+  --max-samples=20000 --max-steps=40 --seed=0xd21f881a768a43bc --backend=rust 2>&1); then
+  echo "FAIL: carryNever unexpectedly HELD on mc_chuggy_citations —" >&2
+  echo "      no reachable eval spawn ever carries a verdict (citation scoping may be vacuous)" >&2
+  exit 1
+fi
+echo "$carry_out" | grep -q '\[violation\]' || {
+  echo "FAIL: mc_chuggy_citations carry probe failed for a reason other than the expected violation:" >&2
+  echo "$carry_out" | tail -5 >&2
+  exit 1
+}
+echo "$carry_out" | grep -q 'CarryEvalVerdicts' && echo "$carry_out" | grep -q 'TSCarried' || {
+  echo "FAIL: carryNever violation trace lacks the carried-verdict signature" >&2
+  exit 1
+}
+echo "Carry reproduced: a reachable rework re-entry carries a disjoint retained passing"
+echo "verdict instead of rerunning its evaluator (citation scoping is exercised, not"
+echo "vacuous — the citations PR's reachability probe)."
 
 echo
 echo "=== All checks passed ==="

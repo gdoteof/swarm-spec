@@ -1,14 +1,14 @@
 /// THE MEASURE COMES FIRST (chuggy-charter.md §5, standing rule 1: "The
 /// termination measure is written before the machine"). This module was
 /// written before domain.qnt, and domain.qnt was designed to fit it — every
-/// transition the machine takes either strictly descends `jobMeasure` or
+/// transition the machine takes either strictly descends `ticketMeasure` or
 /// belongs to one of the three named non-descending sets at the bottom of
 /// this header (STUTTER and CHURN from PR 1; AUTHORING from PR 2; PR 3
 /// extended the micro digit here BEFORE domain.qnt grew stages; the
 /// NOTES-RECONCILIATION PR reworked the ranks and the radix chain here
 /// BEFORE the domain surgery — the rule held a fourth time).
 /// The record types live here too: the measure is a pure function of
-/// a single job's record (per-job — the committed half of the termination
+/// a single ticket's record (per-ticket — the committed half of the termination
 /// row, charter §2; the contested system-quiescence half, §4, is deferred),
 /// so the record shape is part of the measure's definition, not the
 /// machine's.
@@ -84,11 +84,11 @@
 ///                                    tier, one member fewer since Stalled
 ///                                    merged into Escalated)
 ///                       then stagesLeft  (PR 3: how many stages of the
-///                                    job's authored eval program have not
+///                                    ticket's authored eval program have not
 ///                                    yet passed — nonzero only in
 ///                                    Evaluating)
 ///                       then runningCount (the parallel task set of the
-///                                    current phase/stage, charter §2 job
+///                                    current phase/stage, charter §2 ticket
 ///                                    anatomy).
 ///
 /// THE PR 3 DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
@@ -122,7 +122,7 @@
 /// exactly the below-cycle machinery the non-goal excludes, so chuggy tasks
 /// carry no attempt counter and no per-task budget (README notes the skip).
 ///
-/// The retained task RECORD (PR 3, Job.record below) is NOT a measure
+/// The retained task RECORD (PR 3, Ticket.record below) is NOT a measure
 /// input: it is append-only provenance, so it could only ever climb — the
 /// measure reads phase, live tasks, program length, and the accounts. The
 /// program is immutable after arrival and enters only through stagesLeft.
@@ -160,16 +160,16 @@
 /// DESCENT TABLE — which transitions descend, and by which account.
 /// (Deltas verified per-step by the machine's `stepDescends` invariant and
 /// by tests/chuggy_test.qnt; labels are domain.qnt's StepRecord labels.
-/// job-frozen and job-unfrozen are GONE — Frozen removed by the notes;
+/// ticket-frozen and ticket-unfrozen are GONE — Frozen removed by the notes;
 /// stalled-retry is GONE as a label — the pre-work resume is an
 /// operator-retry flavor now, in the CHURN set below.)
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
-///   job-released                        rank 5->4 (authoring: release —
+///   ticket-released                        rank 5->4 (authoring: release —
 ///                                       Draft straight into the pipeline;
 ///                                       Ready/Blocked stay derived)
-///   job-revoked (from any rank>0 phase) rank {5,4,3,2,1}->0, stage digit
+///   ticket-revoked (from any rank>0 phase) rank {5,4,3,2,1}->0, stage digit
 ///                                       and live tasks cleared (retired to
 ///                                       the record, which the measure does
 ///                                       not read); every dependent the
@@ -198,7 +198,7 @@
 ///                                         spawns r <= fanout running, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
-///   job-escalated work_failed           rank 3->0 (cycle-level resolution:
+///   ticket-escalated work_failed           rank 3->0 (cycle-level resolution:
 ///                                       the fabric already retried below
 ///                                       the cycle via trusted backoffLimit)
 ///   eval-passed (the FINAL stage        rank 2->1 AND stagesLeft 1->0
@@ -207,12 +207,12 @@
 ///     (a stage FAILS: the short-circuit   micro reset — rank 2->3, stage
 ///     — later stages never spawn)         digit ->0, work respawn — is
 ///                                         dominated by the account drop)
-///   job-escalated rework_budget_exhausted rank 2->0 (and stage digit ->0)
-///   job-escalated gas_exhausted         rank {2,1}->0
-///   job-done                            rank 1->0
+///   ticket-escalated rework_budget_exhausted rank 2->0 (and stage digit ->0)
+///   ticket-escalated gas_exhausted         rank {2,1}->0
+///   ticket-done                            rank 1->0
 ///   rework-started gate_failure         gas -1 (AND gateLeft -1 when Budgeted)
-///   job-escalated gate_budget_exhausted rank 1->0 (Budgeted only)
-///   job-escalated revalidation_failed   rank 4->0 (the pre-work park —
+///   ticket-escalated gate_budget_exhausted rank 1->0 (Budgeted only)
+///   ticket-escalated revalidation_failed   rank 4->0 (the pre-work park —
 ///                                       Escalated is THE parked phase now;
 ///                                       the wall name survives as the
 ///                                       reason)
@@ -230,7 +230,7 @@
 ///   tolerated idempotently and change nothing):
 ///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
 ///   PR 3 widened task-done-duplicate's REACH, not its effect: task ids are
-///   unique across the job's whole history (sequential within job,
+///   unique across the ticket's whole history (sequential within ticket,
 ///   chuggernaut spec.md §1.2), so a stale completion from an EARLIER
 ///   stage or incarnation no-ops BY IDENTITY — its id is already retired
 ///   into the record. Finitely many by fabric assumption; they cannot
@@ -262,11 +262,11 @@
 ///
 ///   AUTHORING (PR 2, reshaped by the notes PR — author churn above the
 ///   released pipeline; each member is bounded by name):
-///     job-arrived      (+ the fresh Draft's whole jobMeasure: a job enters
+///     ticket-arrived      (+ the fresh Draft's whole ticketMeasure: a ticket enters
 ///                       the fleet. Bounded by construction: ids are dense,
-///                       never reused, and capped by the N_JOBS arrival
-///                       bound — at most N_JOBS arrivals ever. The arrival
-///                       also fixes the job's eval PROGRAM, but a Draft's
+///                       never reused, and capped by the N_TICKETS arrival
+///                       bound — at most N_TICKETS arrivals ever. The arrival
+///                       also fixes the ticket's eval PROGRAM, but a Draft's
 ///                       stage digit is 0, so the climb bound is unchanged.)
 ///                       With Frozen and its unfreeze edit loop REMOVED
 ///                       (the note: "Frozen removed. Draft -> Ready/
@@ -274,25 +274,25 @@
 ///                       member — the unbounded author edit loop left the
 ///                       phase table entirely (content edits on a Draft are
 ///                       below the table's grain).
-///     job-revoked, desk-only (= 0: revoking an already-parked job —
+///     ticket-revoked, desk-only (= 0: revoking an already-parked ticket —
 ///                       Escalated is rank 0, so nothing falls when no
 ///                       dependent gets parked by the cascade. Bounded:
 ///                       PRevoked is absorbing, so each such step
-///                       permanently settles one job — at most N_JOBS
+///                       permanently settles one ticket — at most N_TICKETS
 ///                       ever.)
 ///
-/// PER-JOB LIVENESS, SKETCHED — CONDITIONAL ON AUTHORS (roadmap PR 1 gate,
+/// PER-TICKET LIVENESS, SKETCHED — CONDITIONAL ON AUTHORS (roadmap PR 1 gate,
 /// extended by PR 2; PR 3 changed digits, the notes PR changed the
-/// authoring boundary, neither changed the argument): jobMeasure is a
+/// authoring boundary, neither changed the argument): ticketMeasure is a
 /// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING step
-/// strictly decreases the sum of jobMeasure over all jobs, each CHURN step
-/// requires an operator acting on a desk-visible job (domain.qnt
+/// strictly decreases the sum of ticketMeasure over all tickets, each CHURN step
+/// requires an operator acting on a desk-visible ticket (domain.qnt
 /// `deskVisibility`), and each AUTHORING step is bounded by the arrival
 /// cap. So under default metering, any run with finitely many stutter and
 /// churn events IN WHICH EVERY AUTHOR EVENTUALLY SETTLES EACH DRAFT — every
-/// Draft is eventually released or revoked — parks every job in Done,
+/// Draft is eventually released or revoked — parks every ticket in Done,
 /// Escalated, or Revoked. The conditionality is exact and deliberate: a
-/// job an author never releases is a job the system owes nothing for (this
+/// ticket an author never releases is a ticket the system owes nothing for (this
 /// mirrors the charter §4 quiescence conditionality — the system cannot
 /// promise termination while the environment keeps acting); with the
 /// unfreeze loop gone, an unreleased Draft's measure simply sits flat
@@ -310,9 +310,9 @@ module chuggy_measure {
   // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
   // one TS constructor (TSCarried) and no new prefix.
 
-  /// STORED job phases. Deliberately few (charter standing rule 3, derive
+  /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
   /// don't store): Blocked and Ready are PREDICATES over deps + record in
-  /// domain.qnt, not phases — a job that has not started is PPending, and
+  /// domain.qnt, not phases — a ticket that has not started is PPending, and
   /// the waiting-room split is derived. PPending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
   /// other fields without overloading them). PWorking/PEvaluating carry the
@@ -359,7 +359,7 @@ module chuggy_measure {
   ///                extracted vocabulary agrees — chuggernaut spec.md §1.2
   ///                task creation: "Job enters Work (new cycle): one work
   ///                task", i.e. Work is not staged).
-  ///   TKEval(s)  — a task of eval stage s (0-based index into the job's
+  ///   TKEval(s)  — a task of eval stage s (0-based index into the ticket's
   ///                authored program — chuggernaut spec.md §1.1 evaluator
   ///                `stage:`, "default 0; non-negative; evaluators run in
   ///                ascending stage order; within a stage they fan out in
@@ -373,7 +373,7 @@ module chuggy_measure {
   /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
   /// job pays" for evaluator crashes — one account, no new machinery
   /// (charter §2 eval/evaluator-failure). TCancelled is the retirement
-  /// mark for a task still RUNNING when its job is revoked mid-flight —
+  /// mark for a task still RUNNING when its ticket is revoked mid-flight —
   /// the model's lean form of chuggernaut spec.md §1.2 "Revoke closes
   /// tasks" (revoke force-closes every pending task with a synthetic
   /// resolution recording that the revoke, not a verdict, retired it).
@@ -410,8 +410,8 @@ module chuggy_measure {
   type TaskState = TSRunning | TSResolved(TaskOutcome) | TSCarried
 
   /// A first-class task record (charter §2 job anatomy): identity + kind +
-  /// lifecycle state. `id` is SEQUENTIAL WITHIN THE JOB, 1-indexed, across
-  /// the job's entire history — chuggernaut spec.md §1.2 (`id: u64,
+  /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
+  /// the ticket's entire history — chuggernaut spec.md §1.2 (`id: u64,
   /// sequential within job, 1-indexed`) — never reused across stages,
   /// cycles, or operator retries. That uniqueness is load-bearing: it is
   /// what lets a stale completion from an earlier stage/incarnation be
@@ -445,7 +445,7 @@ module chuggy_measure {
   type Verdict = VPass | VFail
 
   /// Verdict combinator over a resolved task set. PR 3: no longer a
-  /// machine-wide parameter — each STAGE of a job's authored program
+  /// machine-wide parameter — each STAGE of a ticket's authored program
   /// carries its own (eval is data, charter §2); the charter's default,
   /// unanimous pass, is the default program's combinator
   /// (domain.qnt defaultProgram). CUnanimousPass is chuggernaut's
@@ -455,7 +455,7 @@ module chuggy_measure {
   /// combinator ignores), README notes the abstraction.
   type Combinator = CUnanimousPass | CAnyPass
 
-  /// One stage of a job's eval program (PR 3): a task-set with its own
+  /// One stage of a ticket's eval program (PR 3): a task-set with its own
   /// fan-out width and its own verdict combinator. Extracted from
   /// chuggernaut spec.md §3.3: "the dispatcher creates one task per
   /// evaluator in the lowest stage and fans them out in parallel" — a
@@ -473,12 +473,12 @@ module chuggy_measure {
   /// pattern applied to the rework bound: the machine consults an abstract
   /// policy, and RWBudget(n) grants a budget of n cycles. Deliberately the
   /// ONLY branch for now: the triage row keeps the bound in the model
-  /// because removing it entirely would make per-job liveness conditional
+  /// because removing it entirely would make per-ticket liveness conditional
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
   /// the removal that was rejected. If evidence ever argues for another
   /// pricing, it lands as a new constructor here, instantiated alongside
-  /// (the GatePricing method). The per-job ACCOUNT the policy meters
-  /// (Job.reworkLeft) is policy state the middleware owns in the
+  /// (the GatePricing method). The per-ticket ACCOUNT the policy meters
+  /// (Ticket.reworkLeft) is policy state the middleware owns in the
   /// implementation — see the field's note.
   type ReworkPolicy = RWBudget(int)
 
@@ -487,7 +487,7 @@ module chuggy_measure {
   /// livelock (model-status §5b) by configuration.
   type RetryPricing = RetryCharged | RetryFree
 
-  /// Where an operator Retry resumes a parked job. RNone when not parked —
+  /// Where an operator Retry resumes a parked ticket. RNone when not parked —
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
   /// resume point on it would be a lie to the desk. RPending (notes PR,
@@ -497,7 +497,7 @@ module chuggy_measure {
   /// resumes to exactly where it left.
   type Resume = RNone | RPending | RWorking | REvaluating | RLanding
 
-  /// Why a job sits on the human desk. The wall VOCABULARY is carried from
+  /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
   /// v1's explainer (docs/chuggernaut.md §5) and constrained by the charter
   /// §2 termination row — the charter itself does not name individual
   /// walls. With Stalled merged into Escalated (notes PR), the reason is
@@ -521,25 +521,25 @@ module chuggy_measure {
   /// abstract until landing/requirements is answered (roadmap PR 5).
   type LandOutcome = LandAdvanceDefault | LandSquashMerge | LandFailed
 
-  /// One job's record. The measure below is a pure function of this.
-  type Job = {
+  /// One ticket's record. The measure below is a pure function of this.
+  type Ticket = {
     phase: Phase,
-    // Upstream dependency job ids (acyclic by construction in domain.qnt).
+    // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
     deps: Set[int],
     // PR 3: THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // arrives with the Draft (which is exactly why authoring came first,
     // first-class order charter §2) and is immutable after arrival, like
     // deps. This is the charter's "eval is data, not machinery" made
-    // literal: the program is data on the job record; domain.qnt's
+    // literal: the program is data on the ticket record; domain.qnt's
     // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
     // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an ARRIVAL
     // validity condition — domain.qnt programsWellFormed.
     program: List[Stage],
     // The LIVE task set of the current Working phase or Evaluating stage;
-    // empty in every other phase. Task ids are sequential within the job
+    // empty in every other phase. Task ids are sequential within the ticket
     // across its whole history (nextTaskId below).
     tasks: Set[Task],
-    // PR 3: THE RETAINED TASK RECORD — the job's chronological task log
+    // PR 3: THE RETAINED TASK RECORD — the ticket's chronological task log
     // (chuggernaut spec.md §1.2: "tasks form a chronological log ... never
     // referencing each other; no task graph"), append-only: a task moves
     // here, resolution settled, when its set retires (reduce, escalation,
@@ -555,7 +555,7 @@ module chuggy_measure {
     // conditionality as the liveness sketch above.
     record: List[Task],
     // GHOST (PR 3, accounting only — NOT a measure input, exactly like
-    // record; jobMeasure never reads it): how many tasks this job has EVER
+    // record; ticketMeasure never reads it): how many tasks this ticket has EVER
     // spawned. Every spawn site bumps it by its fan-out (spawnOn below),
     // so the machine invariant `spawned == record.length + tasks.size`
     // (domain.qnt idsAccounted) makes history-unique sequential identity a
@@ -566,9 +566,9 @@ module chuggy_measure {
     // POLICY STATE (notes PR): the eval-rework account REMAINING, granted
     // by ReworkPolicy (RWBudget(n) grants n; counts down — the measure
     // wants remaining, not spent). In the IMPLEMENTATION this account
-    // belongs to the middleware, not to the core job entity — the note's
-    // demand — and it stays on the model's Job record for the same reason
-    // the ghost fields do their jobs: the termination measure needs its
+    // belongs to the middleware, not to the core ticket entity — the note's
+    // demand — and it stays on the model's Ticket record for the same reason
+    // the ghost fields do their tickets: the termination measure needs its
     // bounded digit (the model's concern), while ownership of the counter
     // is the implementation's (documented, like `landings`, rather than
     // modeled).
@@ -589,43 +589,43 @@ module chuggy_measure {
     // not retryable) and from the pipeline walls, which no phase predicate
     // could.
     reason: Reason,
-    // GHOST: landing effects ever emitted for this job — the counter the
+    // GHOST: landing effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (charter §2: exactly one landing) reads.
     // Not implementation state.
     landings: int
   }
 
   /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
-  /// predicate over the phase — a desk task is open exactly while the job
+  /// predicate over the phase — a desk task is open exactly while the ticket
   /// is parked on the desk, and (notes PR) PEscalated is THE parked phase.
   /// (v1 stored the flag and proved the iff as an invariant; chuggy
   /// derives it, so the invariant is by construction.) The trace-visible
   /// artifact is the "OpenHumanTask" effect string.
   ///
   /// PRevoked is deliberately NOT here (PR 2): revocation is the author's
-  /// settled choice — the desk owes a revoked job nothing, exactly like
+  /// settled choice — the desk owes a revoked ticket nothing, exactly like
   /// PDone. This is precisely why the revoke cascade needs its own
   /// coverage: a dependent stuck behind a Revoked dep gets no visibility
   /// through its dep, so the cascade parks it with a task of its OWN
   /// (RsDependencyRevoked; domain.qnt `cascadeSafety`).
-  pure def hasOpenHumanTask(job: Job): bool =
-    job.phase == PEscalated
+  pure def hasOpenHumanTask(ticket: Ticket): bool =
+    ticket.phase == PEscalated
 
   /// The machine's observed state, as the pure deciders see it. A record
-  /// (not a bare map) so the job-source shape stays open. PR 2 attached
-  /// authoring here with no widening needed after all — jobs ARRIVE by
+  /// (not a bare map) so the ticket-source shape stays open. PR 2 attached
+  /// authoring here with no widening needed after all — tickets ARRIVE by
   /// growing the map's (dense, never-reused) id domain through the
-  /// `freshJob` seam, and no PR 1 decider needed surgery; the record shape
-  /// stays open for later PRs. PR 3 widened only the Job record (program,
+  /// `freshTicket` seam, and no PR 1 decider needed surgery; the record shape
+  /// stays open for later PRs. PR 3 widened only the Ticket record (program,
   /// record, task kinds), not Core.
-  type Core = { jobs: int -> Job }
+  type Core = { tickets: int -> Ticket }
 
-  /// One observed job-phase transition, golden-trace shaped (standing rule
+  /// One observed ticket-phase transition, golden-trace shaped (standing rule
   /// 4: conformance from day one — the model emits, the implementation
   /// replays). PR 3: from == to is a REAL row, not a degenerate one — the
   /// stage advance is Evaluating -> Evaluating (chuggernaut spec.md §2.1
   /// line 832).
-  type Transition = { job: int, from: Phase, to: Phase }
+  type Transition = { ticket: int, from: Phase, to: Phase }
 
   /// One decision's observable record, mirroring the golden-trace step
   /// schema {event, transitions, effects}.
@@ -691,7 +691,7 @@ module chuggy_measure {
   /// derivation, not by editing a literal.
   pure val rankCeiling: int = rankDraft
 
-  /// How far from settled a job's lifecycle position is. The wildcard is
+  /// How far from settled a ticket's lifecycle position is. The wildcard is
   /// the settled tier: PDone, PEscalated, and PRevoked all take
   /// rankSettled — revoke and every wall drop any live rank straight to
   /// settled.
@@ -720,8 +720,8 @@ module chuggy_measure {
   /// passed — L - s while Evaluating stage s (so in 1..L there), 0 in every
   /// other phase (the digit APPEARS on work-passed and VANISHES on every
   /// exit, both dominated per the header's digit-order argument).
-  pure def stagesLeft(job: Job): int =
-    if (job.phase == PEvaluating) job.program.length() - evalStage(job.tasks)
+  pure def stagesLeft(ticket: Ticket): int =
+    if (ticket.phase == PEvaluating) ticket.program.length() - evalStage(ticket.tasks)
     else 0
 
   /// THE radix derivation, named once (the magic-number audit): a digit
@@ -751,30 +751,30 @@ module chuggy_measure {
   pure def microBound(b: Bounds): int = radix(rankCeiling) * rankWeight(b)
 
   /// Within-cycle progress, lexicographic (rank, stagesLeft, runningCount).
-  pure def micro(b: Bounds, job: Job): int =
-    phaseRank(job.phase) * rankWeight(b)
-      + stagesLeft(job) * stageWeight(b)
-      + runningCount(job.tasks)
+  pure def micro(b: Bounds, ticket: Ticket): int =
+    phaseRank(ticket.phase) * rankWeight(b)
+      + stagesLeft(ticket) * stageWeight(b)
+      + runningCount(ticket.tasks)
 
-  /// THE per-job termination measure: lexicographic
+  /// THE per-ticket termination measure: lexicographic
   /// (gasLeft, gateLeft, reworkLeft, micro), radix-flattened — each
   /// account's radix is one more than its grant (radix again), so every
   /// digit stays strictly below its radix. Nonnegative whenever the
   /// accounts are (domain.qnt's accountsBounded keeps them so).
-  pure def jobMeasure(b: Bounds, job: Job): int =
-    ((job.gasLeft * radix(gateBudget(b.gatePricing)) + job.gateLeft)
+  pure def ticketMeasure(b: Bounds, ticket: Ticket): int =
+    ((ticket.gasLeft * radix(gateBudget(b.gatePricing)) + ticket.gateLeft)
         * radix(reworkBudget(b.reworkPolicy))
-      + job.reworkLeft) * microBound(b)
-    + micro(b, job)
+      + ticket.reworkLeft) * microBound(b)
+    + micro(b, ticket)
 
-  /// Sum over the fleet — steps touch one job, so per-step descent of the
-  /// sum IS per-job descent. Order-independent fold (+ commutes).
-  pure def sysMeasure(b: Bounds, jobs: int -> Job): int =
-    jobs.keys().fold(0, (acc, j) => acc + jobMeasure(b, jobs.get(j)))
+  /// Sum over the fleet — steps touch one ticket, so per-step descent of the
+  /// sum IS per-ticket descent. Order-independent fold (+ commutes).
+  pure def sysMeasure(b: Bounds, tickets: int -> Ticket): int =
+    tickets.keys().fold(0, (acc, j) => acc + ticketMeasure(b, tickets.get(j)))
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
-  /// Task ids are 1-INDEXED, sequential within the job (chuggernaut
+  /// Task ids are 1-INDEXED, sequential within the ticket (chuggernaut
   /// spec.md §1.2: "sequential within job, 1-indexed") — the base named
   /// once so the id arithmetic below carries the convention, not a magic
   /// numeral.
@@ -782,26 +782,26 @@ module chuggy_measure {
 
   /// A fresh parallel task set of kind k: n tasks, all running (spawned
   /// and started in one step — see TaskState), ids start..start+n-1 — the
-  /// caller passes nextTaskId so identity stays sequential within the job
+  /// caller passes nextTaskId so identity stays sequential within the ticket
   /// across the whole history.
   pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
     start.to(start + n - 1).map(i =>
       { id: i, kind: k, state: TSRunning, cited: Set() })
 
-  /// The next task id this job would spawn: every id ever issued is either
+  /// The next task id this ticket would spawn: every id ever issued is either
   /// retired (record) or live (tasks), and ids are dense from firstTaskId.
-  pure def nextTaskId(job: Job): int =
-    firstTaskId + job.record.length() + job.tasks.size()
+  pure def nextTaskId(ticket: Ticket): int =
+    firstTaskId + ticket.record.length() + ticket.tasks.size()
 
-  /// THE spawn site (PR 3): install a fresh fan-out of kind k on the job —
-  /// ids continue the job's sequential history — and bump the ghost
+  /// THE spawn site (PR 3): install a fresh fan-out of kind k on the ticket —
+  /// ids continue the ticket's sequential history — and bump the ghost
   /// `spawned` counter by the same n, which is what keeps the idsAccounted
   /// equality (domain.qnt) checkable. Callers guarantee the previous set
   /// is already retired (tasks empty), which every spawn site satisfies:
   /// dispatch/land-rework/opRetry spawn from task-free phases, and the
-  /// reduces spawn on the retireLive'd job.
-  pure def spawnOn(job: Job, k: TaskKind, n: int): Job =
-    { ...job, tasks: spawnTasks(k, nextTaskId(job), n), spawned: job.spawned + n }
+  /// reduces spawn on the retireLive'd ticket.
+  pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
+    { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
 
   // --- Citation scoping (the citations PR) ---------------------------------
   // The triage note, verbatim: "allow passing evaluators to cite code they
@@ -843,7 +843,7 @@ module chuggy_measure {
   /// THE SCOPED EVAL SPAWN (citations PR) — the footprint-aware
   /// counterpart of spawnOn for the interpreter's two eval-entry sites
   /// (work-passed's lowest-stage entry and the stage advance). Spawns
-  /// stage s's full fan-out of n tasks at the job's next sequential ids
+  /// stage s's full fan-out of n tasks at the ticket's next sequential ids
   /// (identity accounting is UNCHANGED: n tasks spawn, spawned += n,
   /// idsAccounted holds verbatim over carried entries), but position k is
   /// born TSCarried — verdict carried over, evaluator NOT rerun — exactly
@@ -868,23 +868,23 @@ module chuggy_measure {
   ///
   /// DEGENERATION (the compatibility story): when the change intersects
   /// everything — the adversary touches all regions, or any work entry is
-  /// silent — no position carries and this IS spawnOn(job, TKEval(s), n),
+  /// silent — no position carries and this IS spawnOn(ticket, TKEval(s), n),
   /// byte for byte; pinned in tests/chuggy_test.qnt.
-  pure def spawnEvalScoped(job: Job, s: int, n: int, universe: Set[int]): Job =
-    val iLast = lastEvalIndex(job.record, s)
-    if (iLast == -1) spawnOn(job, TKEval(s), n)
+  pure def spawnEvalScoped(ticket: Ticket, s: int, n: int, universe: Set[int]): Ticket =
+    val iLast = lastEvalIndex(ticket.record, s)
+    if (iLast == -1) spawnOn(ticket, TKEval(s), n)
     else
-      val change = changeSince(job.record, iLast, universe)
-      val start = nextTaskId(job)
-      { ...job,
+      val change = changeSince(ticket.record, iLast, universe)
+      val start = nextTaskId(ticket)
+      { ...ticket,
         tasks: 0.to(n - 1).map(k =>
-          val prev = job.record[iLast - n + 1 + k]
+          val prev = ticket.record[iLast - n + 1 + k]
           if (taskPassed(prev) and prev.cited != Set() and
               prev.cited.intersect(change) == Set())
             { id: start + k, kind: TKEval(s), state: TSCarried, cited: prev.cited }
           else
             { id: start + k, kind: TKEval(s), state: TSRunning, cited: Set() }),
-        spawned: job.spawned + n }
+        spawned: ticket.spawned + n }
 
   /// Retire the live task set into the retained record, in id order
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
@@ -896,12 +896,12 @@ module chuggy_measure {
   /// TSCarried task retires AS TSCarried, citation intact (citations PR):
   /// the mark survives into the log — that is both the replay vocabulary
   /// and what lets the NEXT cycle's carry check chain off it.
-  pure def retireLive(job: Job): Job =
-    val start = firstTaskId + job.record.length()
-    { ...job,
+  pure def retireLive(ticket: Ticket): Ticket =
+    val start = firstTaskId + ticket.record.length()
+    { ...ticket,
       tasks: Set(),
-      record: range(start, start + job.tasks.size()).foldl(job.record, (r, i) =>
-        r.append(job.tasks.fold(
+      record: range(start, start + ticket.tasks.size()).foldl(ticket.record, (r, i) =>
+        r.append(ticket.tasks.fold(
           { id: i, kind: TKWork, state: TSResolved(TCancelled), cited: Set() },
           (acc, t) =>
           if (t.id == i)
@@ -936,7 +936,7 @@ module chuggy_measure {
     t.state == TSResolved(TPassed) or t.state == TSCarried
 
   /// The verdict combinator, interpreted per stage (PR 3: the caller reads
-  /// it off the job's program — eval is data, this is the interpreter's
+  /// it off the ticket's program — eval is data, this is the interpreter's
   /// leaf). Callers guarantee all tasks are settled (resolved or carried).
   /// CUnanimousPass is chuggernaut's "every required evaluator in the
   /// stage passed" (spec.md §3.3) at this grain; TFailed and TCancelled

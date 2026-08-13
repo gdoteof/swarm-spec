@@ -65,7 +65,7 @@ itf-golden:
 # Chuggy-model PRs 1-3 + notes + citations (docs/chuggy-charter.md;
 # specs/chuggy/): typecheck + unit tests + invariant simulation on all three
 # instances (both GatePricing branches + RetryFree). PR 2's authoring
-# lifecycle rides the same runs (empty fleet, jobs arrive as Drafts,
+# lifecycle rides the same runs (empty fleet, tickets arrive as Drafts,
 # revoke-cascade gate invariants); PR 3's task-records depth rides them
 # again with PROGRAMS ENABLED (MAX_STAGES = 2: nondet authored eval
 # programs, retained task records, recordWellFormed/recordMonotone/

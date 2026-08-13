@@ -5,7 +5,7 @@
 /// exercised by a machine run, not just by pure unit tests.
 ///
 /// PR 2: every instance runs the AUTHORING actions — the fleet starts
-/// empty and jobs arrive as Drafts, with N_JOBS read as the ARRIVAL BOUND
+/// empty and tickets arrive as Drafts, with N_TICKETS read as the ARRIVAL BOUND
 /// (kept small so the grown state space stays small: arrivals and revoke
 /// multiply the branching).
 ///
@@ -13,7 +13,7 @@
 /// arrivals draw nondet from ALL well-formed eval programs (both lengths,
 /// both combinators, every fan-out in 1..N_TASKS: 20 programs at these
 /// bounds; each stage carries its own combinator — eval is data on the
-/// job, and the charter's unanimous default is domain.qnt defaultProgram,
+/// ticket, and the charter's unanimous default is domain.qnt defaultProgram,
 /// one of the drawn programs). All three instances must keep
 /// `allInvariants` green — including the PR 3 additions recordWellFormed,
 /// recordMonotone, and programsWellFormed — while the budgeted instance
@@ -51,7 +51,7 @@
 module mc_chuggy_budgeted {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
-    N_JOBS = 3,
+    N_TICKETS = 3,
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
@@ -69,7 +69,7 @@ module mc_chuggy_budgeted {
 module mc_chuggy_deadline_only {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
-    N_JOBS = 3,
+    N_TICKETS = 3,
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
@@ -92,7 +92,7 @@ module mc_chuggy_deadline_only {
 module mc_chuggy_retryfree {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
-    N_JOBS = 2,
+    N_TICKETS = 2,
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 2,
@@ -109,12 +109,12 @@ module mc_chuggy_retryfree {
 /// the right program, the right action at ~10 consecutive any{} picks,
 /// and THREE independent citation draws landing on exactly-disjoint
 /// nonempty sets — which the shared instances' nondet surface buries
-/// (measured: carryNever HELD over ~2M unseeded samples on the 3-job
-/// budgeted instance and ~500k on a 1-job N_TASKS = 2 variant). This
+/// (measured: carryNever HELD over ~2M unseeded samples on the 3-ticket
+/// budgeted instance and ~500k on a 1-ticket N_TASKS = 2 variant). This
 /// instance narrows to the densest honest choreography, the GATE-REWORK
 /// carry — the note's scenario verbatim: evaluation must rerun because
 /// the landing failed, and the evaluator that cited a region the gate fix
-/// did not touch is carried. One job, singleton task sets (N_TASKS = 1:
+/// did not touch is carried. One ticket, singleton task sets (N_TASKS = 1:
 /// the mixed-verdict eval-rework carry is impossible over singleton
 /// unanimous stages, and that path is unit-test-pinned anyway), flat
 /// programs, Budgeted(1) so exactly one gate rework exists to scope.
@@ -126,7 +126,7 @@ module mc_chuggy_retryfree {
 module mc_chuggy_citations {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
-    N_JOBS = 1,
+    N_TICKETS = 1,
     N_TASKS = 1,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,

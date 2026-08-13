@@ -371,7 +371,7 @@ echo "(the stepDescends CHURN exemption is exercised, not dead — measure.qnt C
 # the machine-level proof that cascadeSafety's green runs above are checked
 # against traces where the cascade actually fires — without it, a fleet
 # whose revokeDoomed set stayed empty would satisfy cascadeSafety
-# vacuously. The unit tests walk the 3-job chain deterministically; this
+# vacuously. The unit tests walk the 3-ticket chain deterministically; this
 # pins the same shape as REACHABLE in the machine. (Notes-PR forensics:
 # the parks now land on PEscalated — the merged desk — but the witness
 # shape, label, and RsDependencyRevoked signature are unchanged, and the
@@ -393,7 +393,7 @@ echo "$park_out" | grep -q '\[violation\]' || {
   echo "$park_out" | tail -5 >&2
   exit 1
 }
-echo "$park_out" | grep -q 'job-revoked' && echo "$park_out" | grep -q 'RsDependencyRevoked' || {
+echo "$park_out" | grep -q 'ticket-revoked' && echo "$park_out" | grep -q 'RsDependencyRevoked' || {
   echo "FAIL: cascadeParkNever violation trace lacks the revoke-then-park signature" >&2
   exit 1
 }
@@ -439,7 +439,7 @@ echo "stage and spawns the next (the PR 3 interpreter and stage digit are exerci
 # 9b, fourth probe (citations PR) — carry reachability, expected-fail. The
 # witness carryNever ("no eval spawn ever carries a verdict") MUST be
 # violated on mc_chuggy_citations (the probe instance built for exactly
-# this — see its header: one job, singleton task sets, flat programs,
+# this — see its header: one ticket, singleton task sets, flat programs,
 # Budgeted(1), the densest honest carry choreography being the GATE-REWORK
 # carry): a reachable CarryEvalVerdicts effect — a retained passing
 # verdict whose citation is disjoint from what the rework's work attempt

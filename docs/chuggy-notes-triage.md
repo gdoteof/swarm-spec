@@ -44,4 +44,4 @@ veto welcome). Refinements from the follow-up message are folded in.
 
 | Note | Default |
 |---|---|
-| "name job / task to something more contrasting and clear" | **Kept job/task for now.** Renaming is exported trace vocabulary; my proposal is `job / run` ("a job's stages spawn runs") — one word from either of you and the rename lands as its own mechanical PR. |
+| "name job / task to something more contrasting and clear" | **Resolved (geoff, 2026-08-13): job → ticket; task stays task.** Landed as the mechanical rename PR this row promised: `Job`/`jobs`/`job-*` trace labels → `Ticket`/`tickets`/`ticket-*` across specs/chuggy, check.sh Stage 9, and the justfile — zero semantic change; provenance quotes (and chuggernaut's `job_deadline` knob name) stay byte-exact. |

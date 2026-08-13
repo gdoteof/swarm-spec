@@ -375,7 +375,6 @@ module chuggy_domain {
     deps: deps_,
     program: prog,
     repo: repo_,
-    batch: BNone,
     tasks: Set(),
     record: [],
     spawned: 0,
@@ -503,91 +502,6 @@ module chuggy_domain {
   pure def decideRelease(c: Core, j: int): Decision =
     move(c, j, PPending, "ticket-released", [])
 
-  // --- The group (merge-queue PR, R7 — design at the header) ---------------
-
-  /// The LIVE members of the group ticket l leads — DERIVED from the
-  /// members' marks (standing rule 3: the lead stores no member list;
-  /// chuggernaut stores both sides, chuggy keeps only the mark). A Done
-  /// member retains its mark but is not a member any more (the group
-  /// dissolves at the landing that completes it), hence the phase
-  /// conjunct.
-  pure def membersOf(c: Core, l: int): Set[int] =
-    c.tickets.keys().filter(m => and {
-      c.tickets.get(m).phase == PBatched,
-      c.tickets.get(m).batch == BUnder(l)
-    })
-
-  /// May m be absorbed as a member of the group l leads? The re-sited
-  /// entry rule (R7 — the notes follow-up, binding: "Batched from Ready or
-  /// Blocked"): BOTH sides are PPending — the released pre-work state,
-  /// either derived flavor (a Blocked member is absorbable; its un-Done
-  /// deps join the lead's union) — which structurally refuses v1's
-  /// authoring-side entry (a Draft is not PPending). Same repo: the group
-  /// produces ONE branch, and a branch lands in one repo (the repo-analog
-  /// of chuggernaut §2.1's same-type rule; batchWellFormed makes it
-  /// durable). No nesting (chuggernaut: "is not itself a batch"): a ticket
-  /// that leads members cannot be absorbed. "Not already batched" is
-  /// structural — a member is PBatched, not PPending. Chuggernaut's ≥2
-  /// floor and no-inputs rule are below this grain (a lead with one member
-  /// is just a small group; inputs are not modeled).
-  ///
-  /// THE LEAD NEVER ABSORBS ITS OWN DEPENDENCY (the last conjunct — a
-  /// safety rule the first random invariant run of this PR caught, exactly
-  /// like PR 2's tombstone-dep rule): if the lead deps m and m joined the
-  /// group, the union's drop-out would let the lead DISPATCH while m — a
-  /// revocable, un-Done ticket — is still its dep, and revoking m would
-  /// then doom a MID-FLIGHT lead, breaking the cascade's pre-flight
-  /// exhaustiveness (cascadeSafety's whole argument: a dependent of a
-  /// non-Done ticket has never dispatched). Direct is enough: a lead dep
-  /// on a NON-member stays in the union and gates dispatch as ever. The
-  /// jointly-implemented edge is not lost — it is DIRECTED: absorb with
-  /// the dependency as the LEAD (the member-on-lead dep drops out safely,
-  /// because members never dispatch), never the other way around. In
-  /// chuggernaut neither direction exists (the batch is a fresh job:
-  /// members cannot name it and it deps only the computed union) — the
-  /// absorbed-lead reading created both, and keeps only the safe one.
-  pure def absorbableIn(c: Core, l: int, m: int): bool = and {
-    l != m,
-    c.tickets.get(l).phase == PPending,
-    c.tickets.get(m).phase == PPending,
-    c.tickets.get(l).repo == c.tickets.get(m).repo,
-    membersOf(c, m) == Set(),
-    not(c.tickets.get(l).deps.contains(m))
-  }
-
-  /// THE ABSORPTION (R7): the member parks in the grouping phase carrying
-  /// its lead's mark; the lead is untouched (membership derives back).
-  /// Charges nothing on either side — grouping is authoring-adjacent
-  /// churn, and the Working boundary still meters the group's actual work
-  /// entry (standing rule 2). The MEASURE CLIMBS by one rank (+rankWeight,
-  /// Pending -> Batched): the BATCHING set's one member, bounded by lead
-  /// settlements (measure.qnt), with the deterministic witness in
-  /// tests/chuggy_witness_test.qnt's batch module (the stepDescends
-  /// convention roster).
-  pure def decideAbsorb(c: Core, l: int, m: int): Decision =
-    { rec: { label: "ticket-batched",
-        transitions: [{ ticket: m, from: PPending, to: PBatched }],
-        effects: ["AbsorbMember"], landing: LONone },
-      post: withTicket(c, m,
-        { ...c.tickets.get(m), phase: PBatched, batch: BUnder(l) }) }
-
-  /// THE DEP UNION (R7 — chuggernaut §2.1: "the batch depends on the union
-  /// of the members' external deps minus the members"): what must be Done
-  /// before the group's lead may dispatch — the lead's own deps plus every
-  /// live member's, MINUS the group itself: a member-on-member or
-  /// member-on-lead dep is satisfied jointly by the one branch and drops
-  /// out. The drop-out never touches a LEAD dep: absorbableIn refuses a
-  /// member the lead depends on (its header has the safety argument), so
-  /// the lead's own deps survive into the union whole and its dispatch
-  /// gate is never weakened by grouping. For a memberless
-  /// ticket this is exactly its deps — the degeneration.
-  pure def groupDeps(c: Core, j: int): Set[int] =
-    val g = Set(j).union(membersOf(c, j))
-    g.fold(Set(), (acc, k) => acc.union(c.tickets.get(k).deps)).exclude(g)
-
-  pure def groupDepsDoneIn(c: Core, j: int): bool =
-    groupDeps(c, j).forall(k => c.tickets.get(k).phase == PDone)
-
   /// Revoke + THE CASCADE (the PR 2 gate). Table provenance for the revoke
   /// edge itself: lines 47-48 `(_, Revoked) => true` — every non-terminal
   /// phase may be revoked (the caller's guard, revocableIn) — and lines
@@ -665,38 +579,27 @@ module chuggy_domain {
         dset.union(Set(k)) else dset)
     val parked = doomedByJ.filter(k =>
       val p = c.tickets.get(k).phase
-      p == PDraft or p == PPending or p == PBatched)
-    // The lead's live members that are NOT doomed: released to PPending.
-    val released = membersOf(c, j).exclude(doomedByJ)
+      p == PDraft or p == PPending)
     // Ascending, deterministic order for the golden-trace record.
     val parkedList = range(1, n + 1).foldl([], (l, k) =>
       if (parked.contains(k)) l.append(k) else l)
-    val releasedList = range(1, n + 1).foldl([], (l, k) =>
-      if (released.contains(k)) l.append(k) else l)
     { rec: {
         label: "ticket-revoked",
         transitions:
           [{ ticket: j, from: c.tickets.get(j).phase, to: PRevoked }]
             .concat(parkedList.foldl([], (l, k) =>
-              l.append({ ticket: k, from: c.tickets.get(k).phase, to: PEscalated })))
-            .concat(releasedList.foldl([], (l, k) =>
-              l.append({ ticket: k, from: PBatched, to: PPending }))),
+              l.append({ ticket: k, from: c.tickets.get(k).phase, to: PEscalated }))),
         // "Revoke" for the revoked ticket; one OpenHumanTask per parked
-        // dependent — and NONE for the revoked ticket itself; one
-        // ReleaseMember per dissolved member (chuggernaut's job-unbatched).
+        // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"]
-          .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask")))
-          .concat(releasedList.foldl([], (l, k) => l.append("ReleaseMember"))),
+          .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask"))),
         landing: LONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
           { ...retireLive(c.tickets.get(k)), phase: PRevoked,
-            resumeAt: RNone, reason: RsNone, batch: BNone }
+            resumeAt: RNone, reason: RsNone }
         else if (parked.contains(k))
-          { ...c.tickets.get(k), phase: PEscalated, reason: RsDependencyRevoked,
-            batch: BNone }
-        else if (released.contains(k))
-          { ...c.tickets.get(k), phase: PPending, batch: BNone }
+          { ...c.tickets.get(k), phase: PEscalated, reason: RsDependencyRevoked }
         else c.tickets.get(k)) } }
 
   // --- Pure guard predicates (PR 2: shared by actions and unit tests) ------
@@ -810,24 +713,16 @@ module chuggy_domain {
   pure def retryablesIn(c: Core): Set[int] =
     c.tickets.keys().filter(j => retryableIn(c, j))
 
-  /// Absorbable (lead, member) pairs (absorbableIn is the shared guard).
-  pure def absorbablePairsIn(c: Core): Set[(int, int)] =
-    tuples(c.tickets.keys(), c.tickets.keys())
-      .filter(p => absorbableIn(c, p._1, p._2))
-
   /// The derived waiting room (standing rule 3), as pure predicates over a
   /// Core so tests can pin them: a dep that is not Done blocks — including
   /// UNRELEASED deps (Draft, PR 2) and, transiently impossible but
-  /// definitionally covered, revoked ones. Merge-queue PR: the gate is the
-  /// GROUP dep union (groupDeps — for a memberless ticket, exactly its own
-  /// deps), so a lead is Ready only when every member's external dep is
-  /// Done too (R7's union rule; still location-blind — Done-ness, never
-  /// repo).
+  /// definitionally covered, revoked ones. Location-blind — Done-ness,
+  /// never repo.
   pure def isReadyIn(c: Core, j: int): bool =
-    c.tickets.get(j).phase == PPending and groupDepsDoneIn(c, j)
+    c.tickets.get(j).phase == PPending and depsDoneIn(c, j)
 
   pure def isBlockedIn(c: Core, j: int): bool =
-    c.tickets.get(j).phase == PPending and not(groupDepsDoneIn(c, j))
+    c.tickets.get(j).phase == PPending and not(depsDoneIn(c, j))
 
   /// May the dispatcher launch ticket j? Ready (the derived waiting room)
   /// with gas to charge — entry to Working always meters (standing rule
@@ -1154,26 +1049,14 @@ module chuggy_domain {
   /// the mark RETAINED (the provenance landingExclusive reads). A
   /// memberless ticket is the single-transition degeneration.
   pure def landSuccess(c: Core, j: int, eff: str): Decision =
-    val n = c.tickets.keys().size()
-    val ms = membersOf(c, j)
-    val msList = range(1, n + 1).foldl([], (l, k) =>
-      if (ms.contains(k)) l.append(k) else l)
     { rec: {
         label: "ticket-done",
-        transitions:
-          [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }]
-            .concat(msList.foldl([], (l, k) =>
-              l.append({ ticket: k, from: PBatched, to: PDone }))),
-        effects: [eff].concat(msList.foldl([], (l, k) =>
-          l.append("CompleteViaBatch"))),
+        transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
+        effects: [eff],
         landing: LONone },
-      post: { ...c, tickets: c.tickets.keys().mapBy(k =>
-        if (k == j)
-          { ...c.tickets.get(k), phase: PDone,
-            landings: c.tickets.get(k).landings + 1 }
-        else if (ms.contains(k))
-          { ...c.tickets.get(k), phase: PDone }
-        else c.tickets.get(k)) } }
+      post: withTicket(c, j,
+        { ...c.tickets.get(j), phase: PDone,
+          landings: c.tickets.get(j).landings + 1 }) }
 
   /// The landing resolves — since the merge-queue PR, at the END of a
   /// concrete path (R1/R3/R5; the outcome names are charter §2's, the path
@@ -1420,9 +1303,6 @@ module chuggy_domain {
   val gateEnterable: Set[int] = gateEnterablesIn(core)
   /// The occupied gate slots (at most one per repo — gateDepthOne).
   val gatedTickets: Set[int] = gatedIn(core)
-  /// Absorbable (lead, member) pairs (merge-queue PR, R7): both PPending,
-  /// same repo, member leads nobody — absorbableIn is the shared guard.
-  val absorbablePairs: Set[(int, int)] = absorbablePairsIn(core)
   val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
   /// exists and is affordable). Under RetryCharged a charging resume with
@@ -1598,18 +1478,6 @@ module chuggy_domain {
     apply(decideEvalStageReduce(core, j))
   }
 
-  /// An author/operator groups tickets (merge-queue PR, R7): any
-  /// absorbable (lead, member) pair may be drawn — WHICH tickets to group
-  /// is deliberately unrestricted nondet (batching heuristics are policy
-  /// below the model's grain, like the dispatcher's pick; any real
-  /// grouping policy refines free choice). The BATCHING climb, bounded
-  /// (measure.qnt).
-  action absorb = all {
-    absorbablePairs.size() > 0,
-    nondet p = absorbablePairs.oneOf()
-    apply(decideAbsorb(core, p._1, p._2))
-  }
-
   /// THE DEQUEUE (merge-queue PR, R1/R3/R4): a ticket whose repo's gate is
   /// free leaves the queue, and the environment draws — per attempt, fresh,
   /// no stored flag (the envActive standing rule) — whether that repo's
@@ -1685,7 +1553,6 @@ module chuggy_domain {
   action step = any {
     arrive,
     release,
-    absorb,
     revoke,
     dispatch,
     taskDone,
@@ -1727,8 +1594,7 @@ module chuggy_domain {
   /// diff rode the lead's single effect.
   val landingExclusive: bool = liveTickets.forall(j => and {
     tickets.get(j).landings <= 1,
-    (tickets.get(j).landings == 1) iff
-      (tickets.get(j).phase == PDone and tickets.get(j).batch == BNone)
+    (tickets.get(j).landings == 1) iff (tickets.get(j).phase == PDone)
   })
 
   /// REVOKED NEVER LANDS (the PR 2 exclusivity extension): a revoked ticket
@@ -1809,20 +1675,8 @@ module chuggy_domain {
         (lastStep.label != "ticket-done") implies a.branchMoved,
         // The path iff: moved resolves from the gate, quiet from the queue.
         lastStep.transitions[0].from == (if (a.branchMoved) PGated else PLanding),
-        // The fan-out arm: only a success fans out, and every extra
-        // transition is a member completion of THIS lead in THIS repo.
-        (lastStep.label != "ticket-done") implies
-          (lastStep.transitions.length() == 1),
-        lastStep.transitions.indices().forall(i => or {
-          i == 0,
-          and {
-            lastStep.transitions[i].from == PBatched,
-            lastStep.transitions[i].to == PDone,
-            tickets.get(lastStep.transitions[i].ticket).repo == a.repo,
-            tickets.get(lastStep.transitions[i].ticket).batch ==
-              BUnder(lastStep.transitions[0].ticket)
-          }
-        })
+        // One landing attempt moves exactly one ticket.
+        lastStep.transitions.length() == 1
       }
   }
 
@@ -1891,41 +1745,6 @@ module chuggy_domain {
       tickets.get(j).phase == PGated,
       tickets.get(j).repo == r
     }).size() <= 1)
-
-  /// THE GROUP DISCIPLINE (merge-queue PR, R7): marks are exactly the
-  /// grouping the machine means —
-  ///   - Batched iff marked (the phase and the mark never disagree);
-  ///   - a mark names a LIVE, DISTINCT, UNMARKED lead (no nesting —
-  ///     chuggernaut: "is not itself a batch") in the SAME repo (one
-  ///     branch = one repo);
-  ///   - a LIVE member's lead is un-settled and released (not Done — it
-  ///     would have fanned the member out; not Revoked — it would have
-  ///     released it; not Draft — absorption needs a released lead and
-  ///     leads never return to authoring);
-  ///   - a DONE marked ticket is the completion-provenance case: its lead
-  ///     is Done too (the fan-out was atomic with the lead's landing).
-  val batchWellFormed: bool = liveTickets.forall(j =>
-    match tickets.get(j).batch {
-      | BNone => tickets.get(j).phase != PBatched
-      | BUnder(l) => and {
-          liveTickets.contains(l),
-          l != j,
-          tickets.get(l).batch == BNone,
-          tickets.get(l).repo == tickets.get(j).repo,
-          or {
-            and {
-              tickets.get(j).phase == PBatched,
-              tickets.get(l).phase != PDone,
-              tickets.get(l).phase != PRevoked,
-              tickets.get(l).phase != PDraft
-            },
-            and {
-              tickets.get(j).phase == PDone,
-              tickets.get(l).phase == PDone
-            }
-          }
-        }
-    })
 
   /// Every live ticket targets a repo inside the bounded universe — the
   /// arrival-refusal claim made durable (the programsWellFormed shape):
@@ -2152,13 +1971,7 @@ module chuggy_domain {
   /// No test drives a worst-case n-hop mixed-direction chain at fleet
   /// bound; the unit suite pins the group cases at decider grain and the
   /// mc instances check the resulting invariants at n <= 3.
-  def visEdges(j: int): Set[int] =
-    tickets.get(j).deps
-      .union(match tickets.get(j).batch {
-        | BUnder(l) => if (tickets.get(j).phase == PBatched) Set(l) else Set()
-        | BNone => Set()
-      })
-      .union(membersOf(core, j))
+  def visEdges(j: int): Set[int] = tickets.get(j).deps
 
   /// Tickets whose own measure cannot descend without a human: parked on
   /// the desk; Pending behind a chain containing a parked ticket (through
@@ -2181,10 +1994,7 @@ module chuggy_domain {
       liveTickets.filter(j => or {
         tickets.get(j).phase == PEscalated,
         and {
-          or {
-            tickets.get(j).phase == PPending,
-            tickets.get(j).phase == PBatched
-          },
+          tickets.get(j).phase == PPending,
           visEdges(j).exists(d => st.contains(d))
         }
       }))
@@ -2424,7 +2234,6 @@ module chuggy_domain {
     quietRepoLandsCleanly,
     gatedPromotesDirectSquashes,
     gateDepthOne,
-    batchWellFormed,
     reposWellFormed,
     terminalsAbsorbing,
     deskConsistent,

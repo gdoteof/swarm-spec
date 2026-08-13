@@ -17,6 +17,20 @@
 ///   - both retry-metering branches (charter §2 op-retry row);
 ///   - the eval combinator changes MACHINE decisions, not just the pure
 ///     `combine` (charter §2: eval is data).
+///
+/// PR 2 additions (authoring lifecycle; gate: revoke cascades proved safe):
+///   - arrival/freeze/release strictly descend where the descent table
+///     says, and the AUTHORING climbers (arrival, unfreeze) are pinned as
+///     climbers;
+///   - revoke from EVERY phase the v1 table permits (table.qnt lines
+///     47-48), with the desk-only flat cases pinned, and revocableIn false
+///     exactly on the absorbing terminals (lines 45-46);
+///   - the cascade end-to-end on a 3-job chain: atomic park with the
+///     dependency_revoked wall, own desk task per dependent, none for the
+///     revoked job itself;
+///   - a dependency on an UNRELEASED (Draft/Frozen) job blocks;
+///   - revoked never lands, and revoke/cascade spend NOTHING (no gas, no
+///     budgets — account-by-account equality).
 module chuggy_test {
   import chuggy_measure.* from "../measure"
 
@@ -73,9 +87,20 @@ module chuggy_test {
   pure def mD(c: Core): int = sysMeasure(bD, c.jobs)
 
   // === The happy path, decision by decision ================================
-  // Job 1 free, job 2 blocked behind it (the derived waiting room).
+  // PR 2: the path now STARTS at authoring — the fleet is empty, job 1
+  // arrives as a Draft (freshJob seam), is frozen, and released; job 2
+  // arrives as a Draft depending on 1 and stays unreleased throughout.
 
-  pure val c0: Core = { jobs: Map(1 -> DB::freshJob(Set()), 2 -> DB::freshJob(Set(1))) }
+  pure val cEmpty: Core = { jobs: Map() }
+  pure val dArr1 = DB::decideArrive(cEmpty, Set())
+  pure val cA1 = dArr1.post                        // job 1: Draft
+  pure val dArr2 = DB::decideArrive(cA1, Set(1))
+  pure val cA2 = dArr2.post                        // job 2: Draft, dep {1}
+  pure val dFreeze = DB::decideFreeze(cA2, 1)
+  pure val cFroz = dFreeze.post                    // job 1: Frozen
+  pure val dRelease = DB::decideRelease(cFroz, 1)
+
+  pure val c0: Core = dRelease.post                // job 1: Pending, job 2: Draft
   pure val dDispatch = DB::decideDispatch(c0, 1)
   pure val c1 = dDispatch.post
   pure val dWork1 = DB::decideTaskDone(c1, 1, 1, VPass)
@@ -284,7 +309,9 @@ module chuggy_test {
   // === The human desk: stall, retries, and the metering parameter ==========
 
   /// Pre-work invalidation parks the job (rank 4 -> 0: descends, free) …
-  pure val cFresh: Core = { jobs: Map(1 -> DB::freshJob(Set())) }
+  /// (PR 2: freshJob now births a Draft, so the RELEASED fixture overrides
+  /// the phase — revalFail is a Ready-phase edge.)
+  pure val cFresh: Core = { jobs: Map(1 -> { ...DB::freshJob(Set()), phase: PPending }) }
   pure val dStall = DB::decideRevalFail(cFresh, 1)
 
   /// … and the operator's stalled-retry is the CHURN set's canonical
@@ -387,4 +414,220 @@ module chuggy_test {
 
   run anyPassNotAlwaysPassTest = assert(
     DA::decideEvalReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
+
+  // ==========================================================================
+  // === PR 2: the authoring lifecycle =======================================
+  // ==========================================================================
+
+  /// Arrival through the freshJob seam: dense ids, born a Draft with FULL
+  /// accounts, CreateDraft effect, no phase transition (a birth, not an
+  /// edge) — and the measure CLIMBS by the fresh Draft's whole jobMeasure:
+  /// the AUTHORING set's arrival member, pinned as a climber so the
+  /// stepDescends exemption list stays honest.
+  run arrivalTest = assert(and {
+    dArr1.rec.label == "job-arrived",
+    dArr1.rec.transitions == [],
+    dArr1.rec.effects == ["CreateDraft"],
+    cA1.jobs.keys() == Set(1),
+    cA1.jobs.get(1).phase == PDraft,
+    cA1.jobs.get(1).deadlineLeft == 3,     // full grant, nothing spent
+    cA1.jobs.get(1).reworkLeft == 1,
+    cA1.jobs.get(1).gateLeft == 1,
+    cA2.jobs.keys() == Set(1, 2),          // dense: next id = size + 1
+    cA2.jobs.get(2).deps == Set(1),        // dep on an UNRELEASED job: legal
+    mB(cA1) > mB(cEmpty),                  // AUTHORING: climbs
+    mB(cA2) > mB(cA1)
+  })
+
+  /// Freeze and release strictly descend (freeze 6->5, release 5->4 — the
+  /// descent-table rows for table.qnt lines 22 and 25-26), golden-trace
+  /// shaped.
+  run freezeReleaseDescendTest = assert(and {
+    dFreeze.rec.label == "job-frozen",
+    dFreeze.rec.transitions == [{ job: 1, from: PDraft, to: PFrozen }],
+    mB(cFroz) < mB(cA2),
+    dRelease.rec.label == "job-released",
+    dRelease.rec.transitions == [{ job: 1, from: PFrozen, to: PPending }],
+    mB(c0) < mB(cFroz)
+  })
+
+  /// The v1 table also releases straight from Draft (line 21: `(Draft,
+  /// Ready | Blocked | ...)`) — no freeze required; descends 6->4.
+  run directReleaseFromDraftTest = assert(and {
+    DB::decideRelease(cA1, 1).rec.transitions ==
+      [{ job: 1, from: PDraft, to: PPending }],
+    mB(DB::decideRelease(cA1, 1).post) < mB(cA1),
+    DB::isReadyIn(DB::decideRelease(cA1, 1).post, 1)   // no deps: Ready derives
+  })
+
+  /// Unfreeze (table line 24, the edit loop) CLIMBS — the AUTHORING churn
+  /// member that makes per-job liveness conditional on authors eventually
+  /// releasing or revoking (measure.qnt header), pinned exactly like
+  /// stalled-retry and the RetryFree resumes.
+  run unfreezeClimbsTest = assert(and {
+    DB::decideUnfreeze(cFroz, 1).rec.label == "job-unfrozen",
+    DB::decideUnfreeze(cFroz, 1).rec.transitions ==
+      [{ job: 1, from: PFrozen, to: PDraft }],
+    mB(DB::decideUnfreeze(cFroz, 1).post) > mB(cFroz)
+  })
+
+  /// A dependency on an UNRELEASED job blocks: release job 2 while its dep
+  /// (job 1) is still Draft — Blocked derives; freezing the dep changes
+  /// nothing (Frozen is not Done either). Positive control: once the dep
+  /// is Done (c8), releasing job 2 derives Ready.
+  pure val cRel2: Core = DB::decideRelease(cA2, 2).post   // 2 Pending, dep 1 Draft
+  run unreleasedDepBlocksTest = assert(and {
+    DB::isBlockedIn(cRel2, 2),
+    not(DB::isReadyIn(cRel2, 2)),
+    DB::isBlockedIn(DB::decideFreeze(cRel2, 1).post, 2),  // Frozen dep: still blocked
+    DB::isReadyIn(DB::decideRelease(c8, 2).post, 2)       // Done dep: Ready
+  })
+
+  // === Revoke, from every phase the v1 table permits =======================
+  // Table lines 47-48: `(_, Revoked) => true` — every non-terminal. Eight
+  // single-job fixtures, one per phase; the two desk phases are the
+  // measure-FLAT cases (AUTHORING set), every live-rank phase must
+  // strictly descend. Accounts are deliberately part-spent so the
+  // no-leakage equality below is not vacuously "full grant == full grant".
+
+  pure def revokedShape(j: Job): bool = and {
+    j.phase == PRevoked,
+    j.tasks == Set(),          // Revoked holds nothing
+    j.resumeAt == RNone,
+    j.reason == RsNone,        // and opens NO human task...
+    not(hasOpenHumanTask(j))   // ...revocation is the author's settled choice
+  }
+
+  /// Revoke charges no gas and spends (or refunds) no budget: every
+  /// account unchanged, account by account.
+  pure def accountsUntouched(pre: Job, post: Job): bool = and {
+    post.deadlineLeft == pre.deadlineLeft,
+    post.reworkLeft == pre.reworkLeft,
+    post.gateLeft == pre.gateLeft
+  }
+
+  pure def spent(j: Job): Job =
+    { ...j, deadlineLeft: 2, reworkLeft: 0, gateLeft: 1 }
+
+  pure val jDraft: Job = spent(DB::freshJob(Set()))
+  pure val jFrozen: Job = { ...jDraft, phase: PFrozen }
+  pure val jPend: Job = { ...jDraft, phase: PPending }
+  pure val jWork: Job = { ...jDraft, phase: PWorking, tasks: freshTasks(2) }
+  pure val jEval: Job = { ...jDraft, phase: PEvaluating, tasks: mixedOutcomes }
+  pure val jLand: Job = { ...jDraft, phase: PLanding }
+  pure val jEsc: Job = { ...jDraft, phase: PEscalated,
+    resumeAt: REvaluating, reason: RsReworkBudgetExhausted }
+  pure val jStall: Job = { ...jDraft, phase: PStalled, reason: RsRevalidationFailed }
+
+  pure def revokeOne(j: Job): Decision =
+    DB::decideRevoke({ jobs: Map(1 -> j) }, 1)
+
+  pure def revokeOneOk(j: Job): bool = and {
+    revokeOne(j).rec.label == "job-revoked",
+    revokeOne(j).rec.transitions == [{ job: 1, from: j.phase, to: PRevoked }],
+    revokeOne(j).rec.effects == ["Revoke"],   // no OpenHumanTask for the revoked job
+    revokedShape(revokeOne(j).post.jobs.get(1)),
+    accountsUntouched(j, revokeOne(j).post.jobs.get(1)),
+    revokeOne(j).post.jobs.get(1).landings == 0
+  }
+
+  run revokeFromEachPhaseTest = assert(and {
+    revokeOneOk(jDraft), revokeOneOk(jFrozen), revokeOneOk(jPend),
+    revokeOneOk(jWork), revokeOneOk(jEval), revokeOneOk(jLand),
+    revokeOneOk(jEsc), revokeOneOk(jStall)
+  })
+
+  /// Measure classification of revoke, pinned: strict descent from every
+  /// live-rank phase (the settled tier swallows rank AND running tasks);
+  /// exactly FLAT from the two desk phases with nobody to park — the
+  /// AUTHORING set's bounded desk-settle member.
+  pure def mOne(j: Job): int = mB({ jobs: Map(1 -> j) })
+  pure def mOneAfter(j: Job): int = mB(revokeOne(j).post)
+
+  run revokeMeasureClassifiedTest = assert(and {
+    mOneAfter(jDraft) < mOne(jDraft),
+    mOneAfter(jFrozen) < mOne(jFrozen),
+    mOneAfter(jPend) < mOne(jPend),
+    mOneAfter(jWork) < mOne(jWork),
+    mOneAfter(jEval) < mOne(jEval),
+    mOneAfter(jLand) < mOne(jLand),
+    mOneAfter(jEsc) == mOne(jEsc),      // desk revoke: flat, by design
+    mOneAfter(jStall) == mOne(jStall)
+  })
+
+  /// Table lines 45-46, `(Done | Revoked, Revoked) => false`: the
+  /// absorbing terminals are exactly the unrevocable phases.
+  run revocableExactlyNonTerminalTest = assert(and {
+    DB::revocableIn({ jobs: Map(1 -> jDraft) }, 1),
+    DB::revocableIn({ jobs: Map(1 -> jEsc) }, 1),
+    not(DB::revocableIn(c8, 1)),                                  // Done
+    not(DB::revocableIn(revokeOne(jDraft).post, 1))               // Revoked
+  })
+
+  /// REVOKED NEVER LANDS (the exclusivity extension): revoking a job
+  /// parked ON the landing strip emits no landing effect and leaves the
+  /// landing counter at zero — contrast with the landed job (c8), whose
+  /// counter is 1 and which is beyond revoke's reach (previous test).
+  run revokedNeverLandsTest = assert(and {
+    revokeOne(jLand).post.jobs.get(1).landings == 0,
+    revokeOne(jLand).rec.effects == ["Revoke"],
+    c8.jobs.get(1).landings == 1
+  })
+
+  // === THE CASCADE, end-to-end on a 3-job chain (the PR 2 gate) ============
+  // 1 <- 2 <- 3: job 1 released, job 2 released behind it, job 3 still a
+  // Draft behind 2. Revoking 1 must — in ONE atomic decision — settle 1
+  // (no task) and park BOTH transitive dependents with their own
+  // dependency_revoked desk task, spending nothing anywhere.
+
+  pure val cChain: Core = { jobs: Map(
+    1 -> { ...DB::freshJob(Set()), phase: PPending },
+    2 -> { ...DB::freshJob(Set(1)), phase: PPending },
+    3 -> DB::freshJob(Set(2))
+  ) }
+  pure val dCascade = DB::decideRevoke(cChain, 1)
+  pure val cParked = dCascade.post
+
+  run cascadeEndToEndTest = assert(and {
+    dCascade.rec.label == "job-revoked",
+    // One StepRecord, ascending: the revoke then both parks — atomic.
+    dCascade.rec.transitions == [
+      { job: 1, from: PPending, to: PRevoked },
+      { job: 2, from: PPending, to: PStalled },
+      { job: 3, from: PDraft, to: PStalled }
+    ],
+    // A desk task per parked dependent; NONE for the revoked job.
+    dCascade.rec.effects == ["Revoke", "OpenHumanTask", "OpenHumanTask"],
+    revokedShape(cParked.jobs.get(1)),
+    cParked.jobs.get(2).phase == PStalled,
+    cParked.jobs.get(2).reason == RsDependencyRevoked,
+    hasOpenHumanTask(cParked.jobs.get(2)),
+    cParked.jobs.get(3).phase == PStalled,
+    cParked.jobs.get(3).reason == RsDependencyRevoked,
+    hasOpenHumanTask(cParked.jobs.get(3)),
+    // The cascade spends nothing on anyone.
+    accountsUntouched(cChain.jobs.get(2), cParked.jobs.get(2)),
+    accountsUntouched(cChain.jobs.get(3), cParked.jobs.get(3)),
+    // And the whole step strictly descends (three ranks fall to 0).
+    mB(cParked) < mB(cChain)
+  })
+
+  /// The parked dependents' walls resolve by REVOKE, not retry: the
+  /// dependency_revoked wall is not retryable (deps are immutable — the
+  /// deliberate table-line-44 deviation documented at stallRetryableIn),
+  /// while the revalidation wall stays retryable. A human revoking parked
+  /// job 2 settles it from the desk: flat measure (AUTHORING member), no
+  /// re-park of already-parked 3, and job 3's task stays open.
+  pure val dSettle2 = DB::decideRevoke(cParked, 2)
+
+  run cascadeSettleByRevokeTest = assert(and {
+    not(DB::stallRetryableIn(cParked, 2)),         // dependency_revoked: no retry
+    not(DB::stallRetryableIn(cParked, 3)),
+    DB::stallRetryableIn(dStall.post, 1),          // revalidation_failed: retryable
+    dSettle2.rec.transitions == [{ job: 2, from: PStalled, to: PRevoked }],
+    dSettle2.rec.effects == ["Revoke"],
+    mB(dSettle2.post) == mB(cParked),              // desk revoke: flat, pinned
+    dSettle2.post.jobs.get(3).phase == PStalled,   // 3 untouched, still covered
+    hasOpenHumanTask(dSettle2.post.jobs.get(3))
+  })
 }

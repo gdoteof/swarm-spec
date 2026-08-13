@@ -4,6 +4,15 @@
 /// RetryFree instance so the operator-churn exemption in stepDescends is
 /// exercised by a machine run, not just by pure unit tests.
 ///
+/// PR 2: every instance now runs the AUTHORING actions too — the fleet
+/// starts empty and jobs arrive as Drafts, with N_JOBS read as the ARRIVAL
+/// BOUND (kept small so the grown state space stays small: arrivals, the
+/// unfreeze loop, and revoke multiply the branching). All three instances
+/// must keep `allInvariants` green with authoring enabled — including the
+/// PR 2 gate invariants revokedNeverLands and cascadeSafety — while the
+/// budgeted instance also feeds Stage 9b's second expected-violation run
+/// (cascadeParkNever, the cascade-reachability probe).
+///
 /// Imports are not re-exported by the chuggy_domain instance, so each
 /// module pulls the vocabulary (constructors used in --invariant
 /// expressions and in the instantiation itself) from chuggy_measure

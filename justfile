@@ -62,14 +62,16 @@ conformance:
 itf-golden:
     bash scripts/gen-candidates.sh
 
-# Chuggy-model PRs 1-2 (docs/chuggy-charter.md; specs/chuggy/): typecheck +
+# Chuggy-model PRs 1-3 (docs/chuggy-charter.md; specs/chuggy/): typecheck +
 # unit tests + invariant simulation on all three instances (both GatePricing
-# branches + RetryFree). PR 2's authoring lifecycle rides the same runs:
-# the fleet starts empty, jobs arrive as Drafts, and allInvariants now
-# includes the revoke-cascade gate (revokedNeverLands, cascadeSafety).
-# This is check.sh Stage 9 minus its two expected-violation witnesses
-# (free-retry climb, cascade park), which need bash logic — run
-# `just check` for the full gate.
+# branches + RetryFree). PR 2's authoring lifecycle rides the same runs
+# (empty fleet, jobs arrive as Drafts, revoke-cascade gate invariants);
+# PR 3's task-records depth rides them again with PROGRAMS ENABLED
+# (MAX_STAGES = 2: nondet authored eval programs, retained task records,
+# recordWellFormed/recordMonotone/programsWellFormed in allInvariants).
+# This is check.sh Stage 9 minus its three expected-violation witnesses
+# (free-retry climb, cascade park, stage advance), which need bash logic —
+# run `just check` for the full gate.
 chuggy:
     npx quint typecheck specs/chuggy/measure.qnt
     npx quint typecheck specs/chuggy/domain.qnt

@@ -4,14 +4,22 @@
 /// RetryFree instance so the operator-churn exemption in stepDescends is
 /// exercised by a machine run, not just by pure unit tests.
 ///
-/// PR 2: every instance now runs the AUTHORING actions too — the fleet
-/// starts empty and jobs arrive as Drafts, with N_JOBS read as the ARRIVAL
-/// BOUND (kept small so the grown state space stays small: arrivals, the
-/// unfreeze loop, and revoke multiply the branching). All three instances
-/// must keep `allInvariants` green with authoring enabled — including the
-/// PR 2 gate invariants revokedNeverLands and cascadeSafety — while the
-/// budgeted instance also feeds Stage 9b's second expected-violation run
-/// (cascadeParkNever, the cascade-reachability probe).
+/// PR 2: every instance runs the AUTHORING actions — the fleet starts
+/// empty and jobs arrive as Drafts, with N_JOBS read as the ARRIVAL BOUND
+/// (kept small so the grown state space stays small: arrivals, the
+/// unfreeze loop, and revoke multiply the branching).
+///
+/// PR 3: every instance runs WITH PROGRAMS ENABLED — MAX_STAGES = 2, so
+/// arrivals draw nondet from ALL well-formed eval programs (both lengths,
+/// both combinators, every fan-out in 1..N_TASKS: 20 programs at these
+/// bounds), and the EVAL_COMBINATOR const is gone (the combinator is data
+/// on each job's program now; the charter's unanimous default is
+/// domain.qnt defaultProgram, one of the drawn programs). All three
+/// instances must keep `allInvariants` green — now including the PR 3
+/// additions recordWellFormed, recordMonotone, and programsWellFormed —
+/// while the budgeted instance also feeds Stage 9b's second and third
+/// expected-violation runs (cascadeParkNever, the cascade-reachability
+/// probe, and stageAdvanceNever, the stage-advance-reachability probe).
 ///
 /// Imports are not re-exported by the chuggy_domain instance, so each
 /// module pulls the vocabulary (constructors used in --invariant
@@ -29,7 +37,7 @@ module mc_chuggy_budgeted {
     DEADLINE = 3,
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
-    EVAL_COMBINATOR = CUnanimousPass
+    MAX_STAGES = 2
   ).* from "../domain"
 }
 
@@ -44,7 +52,7 @@ module mc_chuggy_deadline_only {
     DEADLINE = 3,
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
-    EVAL_COMBINATOR = CUnanimousPass
+    MAX_STAGES = 2
   ).* from "../domain"
 }
 
@@ -53,7 +61,10 @@ module mc_chuggy_deadline_only {
 /// exactly the exempted CHURN arm of stepDescends — while the
 /// freeClimbNever witness must be VIOLATED (check.sh Stage 9's
 /// expected-violation run proves the exemption is exercised, not dead).
-/// DEADLINE = 2 keeps escalations frequent so retries are common.
+/// DEADLINE = 2 keeps escalations frequent so retries are common. The
+/// PR 3 churn bound is exercised here too: a free REvaluating resume
+/// respawns the LOWEST stage's fan-out with the full stage digit
+/// (measure.qnt CHURN set).
 module mc_chuggy_retryfree {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
@@ -63,6 +74,6 @@ module mc_chuggy_retryfree {
     DEADLINE = 2,
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
-    EVAL_COMBINATOR = CUnanimousPass
+    MAX_STAGES = 2
   ).* from "../domain"
 }

@@ -26,7 +26,7 @@ it emits the golden traces; `chuggy`'s CI replays them
 Until the monorepo exists, conformance traces ship from here as versioned artifacts;
 when it exists, the spec moves in and replay runs in one CI. The monorepo itself is
 decided but deliberately deferred (geoff, 2026-08-12): **public, under `gdoteof`,
-kasofsk invited as collaborator**; it gets created when implementation work begins —
+kasofsk invited as collaborator** (GitHub user `davemo88` — kasofsk is his org); it gets created when implementation work begins —
 model PRs keep landing here against the working harness until then.
 
 ## 2. Decided

@@ -20,8 +20,9 @@ Derived counts used throughout (all re-derivable from the sources):
 - `decide.qnt` has **10 `pure def decide*` deciders** (plus the helpers
   `mkTransition`, `withJob`, `move`).
 - `allowedTransition` (`table.qnt`) admits **40 legal edges** out of the
-  12 × 12 = 144 ordered state pairs; **17** are emitted by v1 deciders,
-  **23** are table-only (unreachable in the v1 machine).
+  12 × 12 = 144 ordered state pairs; **17** are emitted by v1 deciders and
+  **23** are not — 22 of those table-only (unreachable in the v1 machine),
+  plus row 13, which chuggernaut takes today and the model does not (§3a).
 
 ## 1. Module and instantiation map
 
@@ -289,7 +290,8 @@ The proof-of-integration table: one row per **legal** edge of
 state diagram and this table names the code that produces it.
 
 Counts: **40 legal edges** (of 144 ordered pairs); **17** emitted by
-deciders; **23** table-only. "Golden marker" is the `PublishEvent job-*`
+deciders; **23** not, of which 22 are table-only and one (row 13) is live
+upstream but unmodeled. "Golden marker" is the `PublishEvent job-*`
 decision marker `scripts/gen-conformance.py` keys the replay direction on —
 "—" means no golden fixture exercises the edge, so the replay map has no
 entry for it.
@@ -308,7 +310,7 @@ entry for it.
 | 10 | Blocked → Ready | branch 5 · `decideDepRecheck` | `job-unblocked` | `job-unblocked` | none; `readyQ.append(j)` | every dep Done (`unblockable`) |
 | 11 | Blocked → Stalled | branch 6 · `decideRevalFail` | `job-stalled revalidation_failed` | `job-stalled` | none; `humanTaskOpen := true` | every dep Done, `envActive` |
 | 12 | Ready → Work | branch 1 · `decideDispatch` | `dispatch` | `job-started` | gas −1; `attempt := 1`; readyQ pops head | queue nonempty, `activeCount < N_AGENTS`, gas > 0 |
-| 13 | Ready → Stalled | — no v1 decider emits it (v1's only stall source is revalidation out of Blocked); no v2–v4 milestone claims it | — | — | — | table-only |
+| 13 | Ready → Stalled | — no v1 decider emits it (v1's only stall source is revalidation out of Blocked), but **chuggernaut does**: `decide_entered_park` in `crates/domain/src/decide/work.rs:436` parks a `Ready` job on failed launch-time validation (`launch_validation_failed`, `config_schema_skew`) | — | — | — | unmodeled live edge — see §3a |
 | 14 | Work → Work | branch 2 · `decideTaskDone` WFailure, retry arm | `work-retry` | — | `attempt += 1`; **no gas** (same cycle) | `attempt ≤ WORK_RETRIES` |
 | 15 | Work → Evaluation | branch 2 · `decideTaskDone` WSuccess | `work-succeeded` | `job-evaluation-started` | none | nondet WSuccess |
 | 16 | Work → Escalated | branch 2 · `decideTaskDone` WFailure, exhausted arm | `job-escalated work_retries_exhausted` | — | none; `escalatedFrom := PWork`, `humanTaskOpen`, `wasEscalated` | `attempt > WORK_RETRIES` |
@@ -348,7 +350,9 @@ transition list without any decider.
 
 ### 3a. The v1 reachability gap (edges the table allows, no decider emits)
 
-The 23 table-only rows above, grouped:
+The 23 rows above that no v1 decider emits, grouped. Twenty-two are
+table-only — chuggernaut does not take them either, or takes them at a finer
+grain. The exception is row 13, called out last.
 
 - **Authoring flow (9 edges, v4):** rows 1–9 — all Draft/Frozen/Batched
   rows. The v1 machine's `init` starts every job where release leaves it
@@ -357,14 +361,30 @@ The 23 table-only rows above, grouped:
   `(_, Revoked)` catch-all admits revocation from every non-terminal state,
   and no v1 decider emits `Revoked`. Consequence tracked in
   model-status.md §6b: every invariant is vacuous over Revoked today.
-- **Ready → Stalled (row 13):** v1 stalls only out of Blocked
-  (`decideRevalFail`); nothing in the v2–v4 roadmap names this edge.
 - **Evaluation → Evaluation (row 17, v2)** and **WrapUp → WrapUp
   (row 22, v3):** the self-loops of the staged-eval and merge-queue
   machinery that v1 collapses into single nondet outcomes.
 - **Evaluation → Done (row 20):** the table permits landing straight out of
   Evaluation, but every v1 path to Done goes through WrapUp
   (`decideLand(LClean)`); no roadmap milestone names this edge either.
+- **Ready → Stalled (row 13) — the one edge here that is NOT table-only.**
+  The other 22 are edges chuggernaut itself does not take yet (v4 authoring,
+  v4 revoke) or takes at a finer grain than v1 models (rows 17, 22). This one
+  production takes today: `decide_entered_park`
+  (`crates/domain/src/decide/work.rs:436`) parks a job still in `Ready` on a
+  failed launch-time validation — missing secrets or vars, or a job-type
+  config declaring a `min_dispatcher` above the running binary
+  (`launch_validation_failed`, `config_schema_skew`) — and the pre-work park
+  is `Stalled` precisely because no work task exists yet. The model has no
+  launch-time validation step at all: `decideDispatch` moves Ready → Work
+  unconditionally once the queue and slot guards pass, so there is nowhere
+  for the check to fail. That is a defensible v1 scope call — a stall here is
+  a config defect rather than a lifecycle outcome, and the operator's Retry
+  re-enters the already-modeled `Stalled` → `Ready` edge — but it is an
+  **unmodeled live edge**, not an unreached one, and nothing in the v2–v4
+  roadmap claims it. The distinction matters for coverage: the
+  trace-conformance replay direction can meet a golden fixture exercising this
+  park and the model has no transition to match it with.
 
 ### 3b. The converse direction (no decider escapes the table)
 

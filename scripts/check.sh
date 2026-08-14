@@ -105,7 +105,7 @@ echo "=== Stage 6: liveness (quiescent termination + documented-livelock reprodu
 #     wedge configurations (the expected-FAIL runs below).
 
 # 6a — THE headline expected-fail. chuggernaut docs/spec.md §3.3 "Bounding"
-# (line ~1265): repeated gate failures don't consume rework_budget, so a job
+# (line ~1269): repeated gate failures don't consume rework_budget, so a job
 # that genuinely can't integrate loops Work -> Evaluation -> WrapUp (gate)
 # -> Work; job_deadline is the only backstop. On mc_livelock (DEADLINE=1000
 # ~ no deadline set) this run MUST find a trace where one job takes that
@@ -131,7 +131,7 @@ if [ "$loop_hits" -lt 3 ]; then
   exit 1
 fi
 echo "Livelock reproduced: $loop_hits unbudgeted 'merge_gate_failure' gate reworks of one job"
-echo "(> WORK_RETRIES + REWORK_BUDGET = 2) — spec.md:1265 as a machine-checked trace."
+echo "(> WORK_RETRIES + REWORK_BUDGET = 2) — spec.md:1269 as a machine-checked trace."
 
 # 6b — expected-fail: the wedge. terminationUnderQuiescence (eventually
 # settled, over bare allSettled) is FALSE: after an escalation, quiescing
@@ -316,14 +316,14 @@ echo "=== Stage 9: chuggy-model PRs 1-5 + notes-reconciliation + citations (type
 # (PLanding), the dequeue draws branchMoved — quiet fast-paths the direct
 # SquashMerge in one step, moved opens the repo's depth-1 gate (PGated) —
 # and the gated resolution draws from landOutcomes(true) = AdvanceDefault
-# or the priced eviction (the §5e path rule as machine structure); absorb
-# joined the any{} roster (Batched re-sited: PPending -> PBatched, the
-# grouping whose lead's single landing fans out member completions).
+# or the priced eviction (the §5e path rule as machine structure). That
+# PR's group half (absorb, PBatched, the fan-out) was removed again by the
+# grouping removal, so no absorb pair is drawn.
 # allInvariants gained gatedPromotesDirectSquashes, gateDepthOne, and
-# batchWellFormed (landingExclusive/landingIsolation extended in place),
+# the group discipline (landingExclusive/landingIsolation extended in place),
 # and 9b-DET gained THREE deterministic modules (depth-1 guard-refusal +
 # both success effects on one trace; the DeadlineOnly eviction walking
-# v1's §5a loop into the gas wall; the batch fan-out + dissolution). The
+# v1's §5a loop into the gas wall). The
 # restructured draws changed the nondet surface YET AGAIN, so every
 # 9b-RND seed was re-examined — forensics at each probe.
 # Stage 1 already typechecks specs/chuggy/*.qnt with everything else under
@@ -386,16 +386,13 @@ echo "=== Stage 9b: reachability witnesses — deterministic layer (gates) + ran
 # (adversarial-review MAJOR 1: the p3 routing-mutant catcher); the deadline-only module walks the eviction
 # on the OTHER GatePricing branch (two gas-only gate failures into the
 # gas wall — v1's §5a loop shape with the backstop doing its job); the
-# batch module fires the ticket-batched BATCHING climb (the stepDescends
-# convention roster), absorbs from Ready AND Blocked (the note's both
-# flavors), pins the dep union gating the lead, the completion fan-out
-# (member's dependent Ready in the same post-state), and the
-# dissolution. None has a paired random probe (absorb pairs and landing
-# attempts are dense; the unseeded Stage 9 runs are the random side).
+# batch module witnessed the group half and was deleted with it (the
+# grouping removal). None has a paired random probe (landing attempts are
+# dense; the unseeded Stage 9 runs are the random side).
 for m in chuggy_witness_free_test chuggy_witness_cascade_test \
          chuggy_witness_stage_test chuggy_witness_carry_test \
          chuggy_witness_multirepo_test chuggy_witness_gate_test \
-         chuggy_witness_gate_deadline_test chuggy_witness_batch_test; do
+         chuggy_witness_gate_deadline_test; do
   echo "--- quint test --main=$m specs/chuggy/tests/chuggy_witness_test.qnt"
   npx quint test --main="$m" specs/chuggy/tests/chuggy_witness_test.qnt
 done
@@ -468,7 +465,7 @@ warn_probe() {
 # with the operator-retry pipeline-resume signature in the trace.)
 # (Merge-queue-PR forensics: re-examined against the restructured landing
 # surface — land split into gateEnter (branchMoved draw; quiet fast-path)
-# + gateResolve (the gated outcome draw) and the absorb pair draw joining
+# + gateResolve (the gated outcome draw), the absorb pair draw joining
 # the any{} roster. The multi-repo seed SURVIVED its first re-examination:
 # still violates within its 50k budget (~28s, rust backend) with the
 # operator-retry pipeline-resume signature; deliberately NOT re-pinned.)
@@ -516,7 +513,8 @@ fi
 # against the repo-draw + branchMoved nondet shifts — SURVIVED a third
 # time: violates within its budget (45ms) with both signature greps hit;
 # deliberately NOT re-pinned.) (Merge-queue-PR forensics: re-examined
-# against the gateEnter/gateResolve/absorb restructuring — SURVIVED a
+# against the gateEnter/gateResolve/absorb restructuring (absorb since
+# removed) — SURVIVED a
 # fourth time: violates within its budget (49ms) with both signature
 # greps hit; deliberately NOT re-pinned.)
 if park_out=$(npx quint run specs/chuggy/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted \
@@ -559,7 +557,8 @@ fi
 # forensics: re-examined against the repo-draw + branchMoved shifts —
 # SURVIVED a third time: violates within its budget (646ms) with the
 # eval-stage-passed signature; deliberately NOT re-pinned. Merge-queue-PR
-# forensics: re-examined against the gateEnter/gateResolve/absorb
+# forensics: re-examined against the gateEnter/gateResolve/absorb (since
+# removed)
 # restructuring — SURVIVED a fourth time: violates within its budget
 # (342ms) with the eval-stage-passed signature; deliberately NOT
 # re-pinned.)
@@ -618,7 +617,8 @@ fi
 # warn-only regime: the probe's gate-rework choreography now needs TWO
 # consecutive right draws where it needed one — the dequeue must draw
 # MOVED (gateEnter) and the gated resolution must draw LandFailed
-# (gateResolve) — and the absorb pair draw joined the any{} roster,
+# (gateResolve) — and the absorb pair draw joined the any{} roster (both
+# grouping draws since removed),
 # shifting every trace with >= 2 Pending same-repo tickets. The
 # multi-repo seed 0xd1eb524283a15d73 was verified GENUINELY DEAD before
 # re-pinning: its full 20k-sample budget ran to completion with no

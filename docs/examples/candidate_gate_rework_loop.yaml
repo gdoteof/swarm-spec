@@ -5,7 +5,7 @@
 # golden_traces.rs-style harness to execute.
 # Source: specs/chuggernaut/mc/mc_livelock.qnt (13 ITF states -> 12 steps; skipped init x1 — model bookkeeping, no observable decision).
 # Scenario: the budget-free merge-gate rework loop (chuggernaut docs/spec.md par. 3.3
-# "Bounding", line ~1265): job 1 cycles Work->Evaluation->WrapUp->Work on
+# "Bounding", line ~1269): job 1 cycles Work->Evaluation->WrapUp->Work on
 # merge_gate_failure THREE times — more than WORK_RETRIES + REWORK_BUDGET = 2 combined —
 # with rework_budget untouched (evalReworks stays 1). mc_livelock instance: DEADLINE=1000
 # models a graph with no job_deadline set, so nothing bounds the loop. No hand-written

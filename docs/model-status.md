@@ -38,6 +38,8 @@ model/tooling; **OUT OF SCOPE** = deferred to the v2–v4 roadmap.
 | 13 | The model reproduces each replayable golden scenario step-for-step: transition sequence + model labels exactly, effect sequence through the v1 allowlist | ESTABLISHED for 8/11 scenarios (+ the transition skeleton of a 9th); 3 fixtures gated on v2–v4, effects outside the allowlist unchecked | generated replay runs (`quint test`, check Stage 7), drift-guarded against the fixtures at upstream `72dfa61` | `specs/chuggernaut/tests/conformance/`; [§6c](#6c-model--code-conformance); [§5e](#5e-replay-finding-gated-promote-is-advancedefault-not-squashmerge) |
 | 14 | The generation direction (model → candidate golden fixtures): every model decision projects loss-free (at the modeled grain) into a golden-schema candidate step | ESTABLISHED — projection loss-free by round-trip at the pinned seeds/depths (clean lifecycle `0x37a1792d8159488` @ depth 14, gate loop `0xa5110d572bfbd1d5` @ depth 40) plus a randomized shakeout; **UNKNOWN**: the candidates *executing* in chuggernaut's harness — untested, needs an upstream run | `itf-to-golden.py --roundtrip` (check Stage 8): transitions exact, effects compared in the canonical alphabet through both directions' independent classifiers, `docs/examples/` drift-guarded | `scripts/itf-to-golden.py`, `scripts/conformance_vocab.py`, `docs/examples/`; [trace-conformance.md §3](trace-conformance.md) |
 | 15 | Staged evaluation, merge queue/gate mechanics, capacity queue, task records, crash/reconcile, authoring/batches/revoke | OUT OF SCOPE | v2–v4 roadmap (capacity queue and crash/reconcile currently unscheduled) | README roadmap; [§6b](#6b-abstracted-away-in-v1) |
+| 16 | Pre-work parks are `Stalled`, not `Escalated` — the model transcribed `crates/` where `docs/spec.md` §2.2's prose said the opposite, and upstream corrected the prose to match | ESTABLISHED (upstream closed it) | §2.2's two "transitions to Escalated" sentences now read `Stalled` (job #576, `de60ade`); recorded in chuggernaut `docs/reference/lifecycle-model.md` §3. No model change | `decide.qnt` `decideRevalFail`; [§5f](#5f-confirmed-by-upstream-pre-work-parks-are-stalled-not-escalated) |
+| 17 | `Ready` → `Stalled` (failed launch-time validation) is a live upstream edge the model does not emit | OUT OF SCOPE (unmodeled live edge, not an unreached one) | edge-provenance audit against `crates/domain/src/decide/work.rs:436`; v1 has no launch-time validation step for the check to fail in | [model-map §3](model-map.md#3-edge-provenance) row 13; [§6b](#6b-abstracted-away-in-v1) |
 
 ## 2. Chuggernaut as the model sees it
 
@@ -260,7 +262,7 @@ gas-exhaustion escalations out of Evaluation and WrapUp.
 
 ### 5a. The documented gate-loop livelock, reproduced
 
-chuggernaut `docs/spec.md` §3.3 "Bounding" (line ~1265) says it plainly:
+chuggernaut `docs/spec.md` §3.3 "Bounding" (line ~1269) says it plainly:
 
 > **Bounding** — repeated gate failures don't consume `rework_budget`, so a
 > job that genuinely can't integrate could loop Work → Evaluation → WrapUp
@@ -294,7 +296,7 @@ Stage 6a also greps the trace for ≥ 3 `job-rework-started
 merge_gate_failure` labels, so the *shape* of the violation is asserted, not
 just its existence.
 
-**Upstream status:** documented (spec.md:1265), now machine-checked. The
+**Upstream status:** documented (spec.md:1269), now machine-checked. The
 flip side also holds: with any finite deadline the loop is bounded —
 `gateReworksBoundedByGas` (`gateReworks ≤ DEADLINE`) is Apalache-verified,
 and on `mc_liveness` (DEADLINE=2) `gateReworksWithinBudgets` HOLDS. The
@@ -336,7 +338,7 @@ false).
 operator walking away. Retry-storming an escalated job does not just waste
 attempts — it removes the system's only termination guarantee.
 
-**Upstream status:** NOT documented in chuggernaut's spec. spec.md:1265
+**Upstream status:** NOT documented in chuggernaut's spec. spec.md:1269
 names `job_deadline` as *the* backstop, and no clause in §3.3–§3.5 bounds
 operator retries; nothing upstream states that deadlines fail to bound
 termination once the operator is in the loop.
@@ -424,6 +426,34 @@ point this widening disappears.
 fact the golden traces record and v1's effect vocabulary was too coarse to
 state.
 
+### 5f. Confirmed by upstream: pre-work parks are `Stalled`, not `Escalated`
+
+The model routes a failed unblock-time re-validation to **`Stalled`**
+(`decideRevalFail`, edge 11, label `job-stalled revalidation_failed`) because
+that is what `crates/domain/src/decide/ready.rs` emits — `Effect::Stall`
+targeting `JobState::Stalled`. Chuggernaut's `docs/spec.md` §2.2 prose said
+the opposite for two paths, "transitions to Escalated" for both the
+Ready-transition re-validation and launch-time validation, against §2.1's own
+rows and against the code.
+
+That prose is now corrected upstream (both sentences read `Stalled`; job #576,
+`de60ade`), and `docs/reference/lifecycle-model.md` §3 records the closure. So
+this is not a divergence to reconcile — it is a case where transcribing
+`crates/` rather than the prose spec left the model correct while the spec was
+wrong, and the model needs no change. Kept here because §2.2 is cited from the
+model's decider comments, and a reader diffing against an older spec revision
+would otherwise read a contradiction.
+
+The narrower `Draft`→`Draft` disagreement in that same upstream finding is
+**not** closed and is a real open decision: §2.1 carries two `Draft`→`Draft`
+rows that `assert_transition` rejects. `specs/chuggernaut/table.qnt` follows
+the code and its header says so. Unreachable today — both Draft-edit paths
+persist with `jobs.put` and never enter the state funnel — and v4 content
+either way.
+
+**Upstream status:** closed for the `Stalled` half; the `Draft`→`Draft` half
+is an open platform decision, tracked upstream, not by this model.
+
 ## 6. Unknown / indeterminable
 
 ### 6a. Bounded-verification gaps
@@ -462,6 +492,7 @@ version restores it.
 | Capacity/launch queue absent (`N_AGENTS` is a bare slot count) | queue-wait timeout escalations, drain priority, starvation under saturation | not scheduled |
 | Crash/restart/reconcile absent | does reconcile restore every invariant after a mid-decision crash? | not scheduled |
 | Authoring states + batches + revoke unreachable | Draft/Frozen/Batched flows, revoke fan-out cascade, `Revoked`-related invariants | v4 |
+| No launch-time validation step (`decideDispatch` moves Ready → Work whenever the queue and slot guards pass) | can a job park **before** any work task exists? missing secrets/vars, config-ahead-of-binary skew — chuggernaut emits `Ready` → `Stalled` here (`decide_entered_park`, `crates/domain/src/decide/work.rs:436`) and v1 has no transition for it | not scheduled |
 
 Sharp consequence of the last row: **`Revoked` is unreachable in v1**, so
 every invariant is vacuous over it, and `terminalIsAbsorbing`'s dynamic

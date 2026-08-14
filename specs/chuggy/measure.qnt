@@ -110,28 +110,10 @@
 ///     modeled (a queue is a §2 non-goal; chuggernaut itself loses FIFO
 ///     order across restarts — spec.md §3.6 step 3 rebuilds the queue
 ///     from state, not from order).
-///   - PBatched — the pre-work GROUPING phase (chuggernaut spec.md §2.1
-///     "Batches"; v1 table.qnt lines 27-30), RE-SITED by the notes
-///     follow-up (docs/chuggy-notes-triage.md, recorded row, verbatim:
-///     "Batched from Ready or Blocked"): it enters from PPending — the
-///     released pre-work state whose Ready/Blocked split is derived —
-///     NOT from authoring (v1: Frozen -> Batched). Slotted directly
-///     ABOVE Pending: chuggernaut's own description ("Invisible to
-///     scheduling, holds no branch of its own, cannot be claimed or
-///     released — like Draft") argues the Draft-adjacent tier, and the
-///     slot prices the two exits as descents (Batched -> Done at the
-///     group's landing; Batched -> Pending when the group dissolves)
-///     while the ENTRY (absorption) is the one climb — the new bounded
-///     BATCHING set below.
-///   - `Ticket.batch` (BatchMark) — the authored/operator group mark on a
-///     member. NOT a measure input, like `repo`: no digit, weight, or
-///     account radix reads it (batch-blindness, pinned in
-///     tests/chuggy_test.qnt measureBatchBlindTest); only the PHASE
-///     (PBatched) has a rank. No per-group account exists.
 ///   - microBound's multiplier re-derived, not edited: the ceiling is
-///     still rankDraft, now 7 (5 + the two new rungs), so the multiplier
-///     rose 6 -> 8 through radix(rankCeiling) — the notes PR's
-///     magic-number audit paying rent.
+///     still rankDraft, now 6 (5 + the gate rung, the grouping rung
+///     removed), so the multiplier moved 6 -> 8 -> 7 through
+///     radix(rankCeiling) — the notes PR's magic-number audit paying rent.
 ///
 /// The measure is LEXICOGRAPHIC over the bounded accounts, most significant
 /// first, flattened into one nonnegative integer by radix weighting (every
@@ -151,9 +133,6 @@
 ///                       lexicographic:
 ///                       phaseRank   (Draft 7, the only authoring phase, the
 ///                                    ceiling — Frozen removed by the notes;
-///                                    Batched 6, the pre-work grouping tier
-///                                    directly above the released pipeline
-///                                    — the merge-queue PR;
 ///                                    Pending 5 > Working 4 > Evaluating 3 >
 ///                                    Landing 2 (enqueued) >
 ///                                    Gated 1 (the depth-1 merge gate,
@@ -225,9 +204,10 @@
 ///            <= rankCeiling*rankWeight + (rankWeight - 1)
 ///             < radix(rankCeiling)*rankWeight.
 ///       CHANGED by the notes PR (ceiling 6 -> 5, multiplier 7 -> 6:
-///       Frozen removed compressed the ladder) and AGAIN by the
-///       merge-queue PR (ceiling 5 -> 7, multiplier 6 -> 8: two new rungs,
-///       Gated below Landing and Batched above Pending) — each time
+///       Frozen removed compressed the ladder), AGAIN by the merge-queue
+///       PR (ceiling 5 -> 7, multiplier 6 -> 8: two new rungs, Gated below
+///       Landing and Batched above Pending) and AGAIN by the grouping
+///       removal (ceiling 7 -> 6, multiplier 8 -> 7) — each time
 ///       written as radix(rankCeiling), so the multiplier re-derives from
 ///       the ladder and can never silently drift from it.
 /// The domination chain above micro is unchanged in shape: micro <
@@ -246,21 +226,16 @@
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
-///   ticket-released                        rank 7->5 (authoring: release —
-///                                       Draft straight into the pipeline,
-///                                       skipping the Batched rung, which
-///                                       only absorption enters;
+///   ticket-released                        rank 6->5 (authoring: release —
+///                                       Draft straight into the pipeline;
 ///                                       Ready/Blocked stay derived)
-///   ticket-revoked (from any rank>0 phase) rank {7,6,5,4,3,2,1}->0, stage
+///   ticket-revoked (from any rank>0 phase) rank {6,5,4,3,2,1}->0, stage
 ///                                       digit and live tasks cleared
 ///                                       (retired to the record, which the
 ///                                       measure does not read); every
 ///                                       dependent the atomic cascade parks
-///                                       adds its own rank {7,6,5}->0 drop,
-///                                       and every RELEASED member of a
-///                                       revoked lead adds a rank 6->5 drop
-///                                       (the merge-queue PR's dissolution
-///                                       — see the AUTHORING set for the
+///                                       adds its own rank {6,5}->0 drop
+///                                       (see the AUTHORING set for the
 ///                                       desk-only flat case)
 ///   dispatch                            gas -1 (micro also falls:
 ///                                       rank 5->4 dominates the spawn:
@@ -305,10 +280,7 @@
 ///                                       fast-path SquashMerge straight off
 ///                                       the queue; 1: the gated
 ///                                       AdvanceDefault out of the gate —
-///                                       the §5e path rule), PLUS a rank
-///                                       6->0 drop per Batched member the
-///                                       group's landing completes (the
-///                                       merge-queue PR's fan-out)
+///                                       the §5e path rule)
 ///   rework-started gate_failure         gas -1 (AND gateLeft -1 when
 ///                                       Budgeted); from PGated since the
 ///                                       merge-queue PR — the eviction
@@ -390,30 +362,15 @@
 ///                       absorbing, so each such step permanently settles
 ///                       one ticket — at most N_TICKETS ever.)
 ///
-///   BATCHING (merge-queue PR — the grouping churn above the pipeline;
-///   bounded by name, like AUTHORING):
-///     ticket-batched    (+rankWeight: absorption lifts the member one rung,
-///                       Pending 5 -> Batched 6 — the member suspends its
-///                       own progress and hands its fate to the lead.
-///                       Bounded: a member re-enters Pending only when its
-///                       lead SETTLES (revoke — PRevoked is absorbing), so
-///                       a ticket's absorptions ever <= 1 + its leads
-///                       settled, and total ticket-batched steps <=
-///                       N_TICKETS + N_TICKETS revokes = 2 * N_TICKETS.
-///                       Deterministic witness: the absorb step of
-///                       tests/chuggy_witness_test.qnt's batch module —
-///                       the stepDescends convention roster.)
-///
 /// PER-TICKET LIVENESS, SKETCHED — CONDITIONAL ON AUTHORS (roadmap PR 1 gate,
 /// extended by PR 2; PR 3 changed digits, the notes PR changed the
-/// authoring boundary, the merge-queue PR added the bounded BATCHING set —
+/// authoring boundary, and the grouping removal deleted the BATCHING set —
 /// none changed the argument): ticketMeasure is a
-/// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING
-/// non-BATCHING step
+/// nonnegative integer, every non-STUTTER non-CHURN non-AUTHORING step
 /// strictly decreases the sum of ticketMeasure over all tickets, each CHURN step
 /// requires an operator acting on a desk-visible ticket (domain.qnt
-/// `deskVisibility`), and each AUTHORING or BATCHING step is bounded by the
-/// arrival cap (BATCHING's bound rides revokes — see the set). So under
+/// `deskVisibility`), and each AUTHORING step is bounded by the
+/// arrival cap. So under
 /// default metering, any run with finitely many stutter and
 /// churn events IN WHICH EVERY AUTHOR EVENTUALLY SETTLES EACH DRAFT — every
 /// Draft is eventually released or revoked — parks every ticket in Done,
@@ -436,8 +393,7 @@ module chuggy_measure {
   // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
   // one TS constructor (TSCarried) and no new prefix; the multi-repo PR
   // adds LO (LandingObs — the landing-boundary attribution); the
-  // merge-queue PR adds B (BatchMark — BNone/BUnder; the letter is shared
-  // with the bare GatePricing constructor Budgeted, the NAMES are not).
+  // merge-queue PR added B (BatchMark), deleted again with grouping.
 
   /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
   /// don't store): Blocked and Ready are PREDICATES over deps + record in
@@ -473,18 +429,8 @@ module chuggy_measure {
   /// Evaluating -> Evaluating edge (chuggernaut spec.md §2.1 line 832) —
   /// within-phase progress lives in the stage digit, not in new phases.
   ///
-  /// THE MERGE-QUEUE PR adds exactly two (header, merge-queue note):
-  ///   - PBatched — the pre-work GROUPING phase (chuggernaut spec.md §2.1
-  ///     Batches; v1 table lines 27-30, whose Frozen->Batched entry is
-  ///     deliberately NOT transcribed): a member absorbed into a group led
-  ///     by another ticket, ENTERED FROM PPENDING per the notes follow-up
-  ///     ("Batched from Ready or Blocked" — the re-siting, binding). Like
-  ///     Draft in chuggernaut's own words ("invisible to scheduling,
-  ///     cannot be claimed or released — like Draft"): runs nothing, holds
-  ///     no tasks, spends nothing. Exits: the group's single landing
-  ///     completes it (-> PDone, the fan-out), the lead's revoke releases
-  ///     it (-> PPending, re-batchable), the cascade parks it doomed, or
-  ///     its own revoke settles it.
+  /// THE MERGE-QUEUE PR added two; the grouping removal deleted one of
+  /// them (PBatched), leaving:
   ///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
   ///     §3.3 Merge Gate item 3 + Serialization). PLanding is re-read as
   ///     ENQUEUED (chuggernaut's WrapUp holds both queue and gate slot in
@@ -498,7 +444,6 @@ module chuggy_measure {
   ///     rule, derived-not-stored applied to the environment's choice).
   type Phase =
     PDraft |
-    PBatched |
     PPending | PWorking | PEvaluating | PLanding | PGated |
     PDone | PEscalated | PRevoked
 
@@ -711,22 +656,6 @@ module chuggy_measure {
   type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
 
   /// THE GROUP MARK (merge-queue PR — chuggernaut spec.md §2.1 Batches,
-  /// the `batch_id` field re-read at chuggy's grain): BUnder(l) marks a
-  /// ticket ABSORBED as a member of the group ticket l leads. Chuggy's
-  /// lean reading of chuggernaut's batch-is-its-own-job: the group's
-  /// carrier is an ORDINARY ticket (the lead) that absorbs other released
-  /// pre-work tickets, rather than a new job kind — no new arrival
-  /// machinery, and the lead's own program stands in for chuggernaut's
-  /// eval-criteria union (a documented abstraction, README). Membership is
-  /// DERIVED from the marks (domain.qnt membersOf — derive-don't-store:
-  /// the lead stores no member list, exactly as chuggernaut's `members`
-  /// vector is the stored side and `batch_id` the mark; chuggy keeps only
-  /// the mark). The mark SURVIVES completion (chuggernaut: "Some implies
-  /// the member is (or was) Batched"; cleared only when the group
-  /// dissolves) — which is what lets landingExclusive read a marked Done
-  /// ticket as completed-via-group, no landing effect of its own.
-  /// NOT a measure input (batch-blindness — header note).
-  type BatchMark = BNone | BUnder(int)
 
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
@@ -748,15 +677,6 @@ module chuggy_measure {
     // theorem — derivation in this file's multi-repo header note), and no
     // budget is per-repo (deliberately: no charter provenance — README).
     repo: int,
-    // THE GROUP MARK (merge-queue PR): BNone for an ordinary ticket and
-    // for every lead (leads are unmarked — no nesting, made durable by
-    // domain.qnt batchWellFormed); BUnder(l) on a member absorbed under
-    // lead l (phase PBatched) and RETAINED on a member the group's
-    // landing completed (phase PDone, landings 0 — completed via the
-    // group's single effect). Set by absorption, cleared by dissolution
-    // (lead revoked -> back to PPending), by the cascade park, and by the
-    // member's own revoke. NOT a measure input (batch-blindness).
-    batch: BatchMark,
     // PR 3: THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // arrives with the Draft (which is exactly why authoring came first,
     // first-class order charter §2) and is immutable after arrival, like
@@ -926,22 +846,15 @@ module chuggy_measure {
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The pre-work grouping tier (merge-queue PR): a Batched member's own
-  /// progress is suspended — its exits (the group's landing -> settled,
-  /// the dissolution -> Pending) both descend, and the one climb is the
-  /// absorption entry (the BATCHING set). Slotted Draft-adjacent on
-  /// chuggernaut's own analogy ("cannot be claimed or released — like
-  /// Draft", spec.md §2.1).
-  pure val rankBatched: int = rankPending + 1
   /// The ONLY authoring phase, the ladder's top — Frozen removed by the
   /// notes ("Frozen removed. Draft -> Ready/Blocked"); release descends
-  /// 7 -> 5, over the Batched rung that only absorption enters.
-  pure val rankDraft: int = rankBatched + 1
+  /// 6 -> 5.
+  pure val rankDraft: int = rankPending + 1
   /// The ladder's ceiling — the highest rank any phase takes (PDraft).
   /// microBound's multiplier is radix(rankCeiling): the notes PR's
-  /// compression (6 -> 5) and the merge-queue PR's two new rungs (5 -> 7)
-  /// each propagated to the multiplier (7 -> 6 -> 8) by derivation, not by
-  /// editing a literal.
+  /// compression (6 -> 5), the merge-queue PR's two new rungs (5 -> 7) and
+  /// the grouping removal (7 -> 6) each propagated to the multiplier
+  /// (7 -> 6 -> 8 -> 7) by derivation, not by editing a literal.
   pure val rankCeiling: int = rankDraft
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
@@ -951,7 +864,6 @@ module chuggy_measure {
   pure def phaseRank(p: Phase): int =
     match p {
       | PDraft => rankDraft
-      | PBatched => rankBatched
       | PPending => rankPending
       | PWorking => rankWorking
       | PEvaluating => rankEvaluating

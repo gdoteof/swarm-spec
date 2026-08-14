@@ -62,7 +62,7 @@ module chug_types {
     // REWORK_BUDGET.
     evalReworks: int,
     // UNBUDGETED merge-gate/conflict rework counter — the documented
-    // livelock source (spec.md §3.3 "Bounding", line 1265: repeated gate
+    // livelock source (spec.md §3.3 "Bounding", line 1269: repeated gate
     // failures don't consume `rework_budget`, so a job that can't integrate
     // loops Work → Evaluation → WrapUp → Work; `job_deadline` is the
     // backstop).

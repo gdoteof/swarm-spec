@@ -237,7 +237,7 @@
 /// Ticket.record: append-only provenance, it could only climb). Its
 /// length is finite under EXACTLY the conditions the per-ticket liveness
 /// sketch is stated under (measure.qnt header): non-exempt decisions are
-/// bounded by descent of the finite measure; AUTHORING/BATCHING rows by
+/// bounded by descent of the finite measure; AUTHORING rows by
 /// the arrival cap; STUTTER rows (journaled duplicate-absorptions) by
 /// the fabric's finitely-many-duplicates assumption; CHURN rows are
 /// bounded under RetryCharged (this instance's metering) and unbounded
@@ -302,7 +302,6 @@ module chuggy_refinement {
   type Cmd =
       JArrive({ deps: Set[int], prog: List[Stage], repo: int })
     | JRelease(int)
-    | JAbsorb({ lead: int, member: int })
     | JRevoke(int)
     | JDispatch(int)
     | JTaskDone({ ticket: int, tid: int, verdict: Verdict, cited: Set[int] })
@@ -339,7 +338,6 @@ module chuggy_refinement {
   pure def execCmd(c: Core, cmd: Cmd): Decision = match cmd {
     | JArrive(a) => decideArrive(c, a.deps, a.prog, a.repo)
     | JRelease(j) => decideRelease(c, j)
-    | JAbsorb(p) => decideAbsorb(c, p.lead, p.member)
     | JRevoke(j) => decideRevoke(c, j)
     | JDispatch(j) => decideDispatch(c, j)
     | JTaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict, a.cited)
@@ -367,7 +365,6 @@ module chuggy_refinement {
         repos.contains(a.repo)
       }
     | JRelease(j) => draftsIn(c).contains(j)
-    | JAbsorb(p) => absorbablePairsIn(c).contains((p.lead, p.member))
     | JRevoke(j) => revocablesIn(c).contains(j)
     | JDispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
     | JTaskDone(a) => and {
@@ -419,9 +416,7 @@ module chuggy_refinement {
   // "spawn" emission runs a paid K8s Job fan-out (the SpawnWorkTasks
   // effect — dispatch, both rework arms, the RWorking resume: every one
   // rides a charged account per the domain's descent table); a "landing"
-  // emission merges the ticket's diff (the ticket-done success step —
-  // the group fan-out's CompleteViaBatch rows ride the SAME single
-  // emission, so counting the lead counts the group's one landing, R2).
+  // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's
   // head transition is the stepped ticket (domain.qnt move/landSuccess).
 
@@ -593,11 +588,6 @@ module chuggy_refinement {
     nondet j = draftTickets.oneOf()
     journalStep(JRelease(j))
   }
-  action actorAbsorb = all {
-    absorbablePairs.size() > 0,
-    nondet p = absorbablePairs.oneOf()
-    journalStep(JAbsorb({ lead: p._1, member: p._2 }))
-  }
   action actorRevoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
@@ -690,7 +680,7 @@ module chuggy_refinement {
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
-    actorArrive, actorRelease, actorAbsorb, actorRevoke, actorDispatch,
+    actorArrive, actorRelease, actorRevoke, actorDispatch,
     actorTaskDone, actorWorkReduce, actorEvalReduce, actorGateEnter,
     actorGateResolve, actorLandDuplicate, actorRevalFail, actorOpRetry,
     emitNext, crashRecover
